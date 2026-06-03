@@ -5,7 +5,7 @@ import { initKnownTokensCache } from './services/tokenService';
 import { startPolling } from './services/pollingService';
 import routes from './api/routes';
 
-const PORT = parseInt(process.env.PORT || '3002', 10);
+const PORT = parseInt(process.env.PORT || '3499', 10);
 
 async function main(): Promise<void> {
   console.log('='.repeat(60));

@@ -29,7 +29,7 @@
 | 阶段一 | 链上数据采集（CoinGecko + RPC） | ✅ | 后端架构师 |
 | 阶段一 | 发行方历史代币 API 对接 | ✅ | 后端架构师 |
 | 阶段一 | 迁移状态数据采集 | ✅ | 后端架构师 |
-| 阶段一 | Express API 服务（端口 3002） | ✅ | 后端架构师 |
+| 阶段一 | Express API 服务（端口 3499） | ✅ | 后端架构师 |
 | 阶段一 | SSE 新币推送 | ✅ | 后端架构师 |
 | 阶段一 | 前端项目骨架（Vite + React + TS） | ✅ | 前端工程师 |
 | 阶段一 | Dashboard 页面（真实数据） | ✅ | 前端工程师 |
@@ -78,7 +78,7 @@
 ## 四、技术架构
 
 ```
-前端（端口 3500）          后端（端口 3002）
+前端（端口 3500）          后端（端口 3499）
 React + Ant Design    →    Express + TypeScript
 ECharts               →    SQLite (web3_tokens.db)
 SSE (new-tokens)      →    Binance API (3秒轮询)
