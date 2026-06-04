@@ -9,6 +9,7 @@ import {
   LineChartOutlined,
   WalletOutlined,
   ThunderboltOutlined,
+  SettingOutlined,
 } from '@ant-design/icons';
 import { mockPortfolioStats } from '../mock/data';
 
@@ -27,6 +28,8 @@ const AppLayout: React.FC = () => {
     if (path.startsWith('/trading')) return '/trading';
     if (path.startsWith('/rules')) return '/rules';
     if (path.startsWith('/issuer')) return '/issuer';
+    if (path.startsWith('/signals')) return '/signals';
+    if (path.startsWith('/system')) return '/system';
     return '/';
   };
 
@@ -37,6 +40,7 @@ const AppLayout: React.FC = () => {
     { key: '/rules', icon: <ControlOutlined />, label: '规则引擎' },
     { key: '/issuer', icon: <UserOutlined />, label: '发行方画像' },
     { key: '/signals', icon: <ThunderboltOutlined />, label: 'Smart Money' },
+    { key: '/system', icon: <SettingOutlined />, label: '系统控制' },
   ];
 
   const handleMenuClick = ({ key }: { key: string }) => {

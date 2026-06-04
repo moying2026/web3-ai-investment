@@ -114,6 +114,16 @@ export const issuerRiskApi = {
     api.get(`/issuer/${address}/risk`).catch(() => null),
 };
 
+// ===== 系统控制 API =====
+
+export const systemApi = {
+  getStatus: () => api.get<any, any>('/system/status').catch(() => []),
+  toggle: (moduleId: string, running: boolean) =>
+    api.post(`/system/${moduleId}/toggle`, { running }),
+  toggleAll: (running: boolean) =>
+    api.post('/system/toggle-all', { running }),
+};
+
 export const smartMoneyApi = {
   getSignals: (params?: { page?: number; pageSize?: number }) =>
     api.get<any, PaginatedResponse<any>>('/smart-money/signals', { params }).catch(() => ({ data: [], total: 0, page: 1, pageSize: 20 })),
