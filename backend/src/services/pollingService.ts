@@ -260,21 +260,24 @@ export function startPolling(): void {
   initSystemControl();
 
   // 注册模块
-  registerModule('polling', '热门轮询', 3000);
+  registerModule('polling', '热门轮询', 10000); // 从 3 秒放宽到 10 秒，减少 API 调用
   registerModule('discovery', '新币发现流', 90000);
   registerModule('ai', 'AI 评估引擎', 30000);
   registerModule('trading', '模拟交易', 10000);
   registerModule('trench', '战壕拦截', 30000);
 
-  // 代币数据：每 3 秒
+  // 代币数据：每 10 秒（从 3 秒放宽，减少 Binance API 调用）
   setInterval(() => {
     if (!isModuleRunning('polling')) return;
     pollTokenData();
     recordRun('polling', true);
-  }, 3000);
+  }, 10000);
 
-  // 社交话题：每 60 秒
-  setInterval(pollSocialTopics, 60000);
+  // 社交话题：每 60 秒（错开 5 秒启动）
+  setTimeout(() => {
+    setInterval(pollSocialTopics, 60000);
+    pollSocialTopics();
+  }, 5000);
 
   // 快照检查：每 10 秒
   setInterval(checkAndExecuteSnapshots, 10000);
@@ -285,9 +288,12 @@ export function startPolling(): void {
   // 发行方数据：每 24 小时自动同步一次
   setInterval(fetchIssuerData, 24 * 60 * 60 * 1000);
 
-  // 扩展数据（审计/动态/Smart Money）：每 60 秒
+  // 扩展数据（审计/动态/Smart Money）：每 60 秒（错开 10 秒启动）
   initExtendedTables();
-  setInterval(fetchExtendedData, 60000);
+  setTimeout(() => {
+    setInterval(fetchExtendedData, 60000);
+    fetchExtendedData();
+  }, 10000);
 
   // AI 分析 + 自动模拟买入：每 30 秒
   initAnalysisTable();

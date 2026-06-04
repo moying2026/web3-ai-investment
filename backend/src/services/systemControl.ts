@@ -67,13 +67,13 @@ export function registerModule(id: string, name: string, intervalMs: number): vo
     metrics: {},
   });
 
-  // 确保数据库中有记录
+  // 更新数据库（使用 INSERT OR REPLACE 确保更新间隔）
   db.prepare(`
-    INSERT OR IGNORE INTO system_modules (id, name, running, interval_ms)
-    VALUES (?, ?, 1, ?)
+    INSERT OR REPLACE INTO system_modules (id, name, running, interval_ms, success_count, fail_count)
+    VALUES (?, ?, 1, ?, 0, 0)
   `).run(id, name, intervalMs);
 
-  console.log(`[System] 注册模块: ${id} (${name})`);
+  console.log(`[System] 注册模块: ${id} (${name}) interval=${intervalMs}ms`);
 }
 
 // 记录运行结果
