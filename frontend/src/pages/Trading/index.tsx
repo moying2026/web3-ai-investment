@@ -11,6 +11,7 @@ import {
 import type { AIRecommendation, Position, Token } from '../../types';
 import { tokenApi } from '../../services/api';
 import { mockRecommendations, mockPositions, mockTrades } from '../../mock/data';
+import { formatPrice, formatVolume, formatNumber } from '../../utils/format';
 
 const Trading: React.FC = () => {
   const [activeTab, setActiveTab] = useState('ai');
@@ -138,9 +139,9 @@ const Trading: React.FC = () => {
           <Card size="small" style={{ marginBottom: 16, background: '#f6ffed' }}>
             <Descriptions column={2} size="small">
               <Descriptions.Item label="代币">{queryResult.symbol}</Descriptions.Item>
-              <Descriptions.Item label="价格">${parseFloat(queryResult.price_latest).toFixed(6)}</Descriptions.Item>
+              <Descriptions.Item label="价格">{formatPrice(queryResult.price_latest)}</Descriptions.Item>
               <Descriptions.Item label="持有人">{queryResult.holders}</Descriptions.Item>
-              <Descriptions.Item label="流动性">${(parseFloat(queryResult.liquidity) / 1000).toFixed(0)}K</Descriptions.Item>
+              <Descriptions.Item label="流动性">{formatVolume(queryResult.liquidity)}</Descriptions.Item>
             </Descriptions>
           </Card>
         )}
@@ -186,20 +187,20 @@ const Trading: React.FC = () => {
       <Tag color={v === 'long' ? 'green' : 'red'}>{v === 'long' ? '多' : '空'}</Tag>
     )},
     { title: '数量', dataIndex: 'amount', key: 'amount' },
-    { title: '入场价', dataIndex: 'entryPrice', key: 'entryPrice', render: (v: number) => `$${v.toFixed(6)}` },
-    { title: '当前价', dataIndex: 'currentPrice', key: 'currentPrice', render: (v: number) => `$${v.toFixed(6)}` },
+    { title: '入场价', dataIndex: 'entryPrice', key: 'entryPrice', render: (v: number) => formatPrice(v) },
+    { title: '当前价', dataIndex: 'currentPrice', key: 'currentPrice', render: (v: number) => formatPrice(v) },
     {
       title: '盈亏',
       dataIndex: 'pnl',
       key: 'pnl',
       render: (v: number, record: Position) => (
         <span style={{ color: v >= 0 ? '#52c41a' : '#ff4d4f' }}>
-          {v >= 0 ? '+' : ''}{v.toFixed(2)} USD ({record.pnlPercent.toFixed(2)}%)
+          {formatNumber(v, { prefix: v >= 0 ? '+' : '' })} USD ({formatNumber(record.pnlPercent, { suffix: '%' })})
         </span>
       ),
     },
-    { title: '止损', dataIndex: 'stopLoss', key: 'stopLoss', render: (v?: number) => v ? `$${v.toFixed(6)}` : '-' },
-    { title: '止盈', dataIndex: 'takeProfit', key: 'takeProfit', render: (v?: number) => v ? `$${v.toFixed(6)}` : '-' },
+    { title: '止损', dataIndex: 'stopLoss', key: 'stopLoss', render: (v?: number) => v ? formatPrice(v) : '-' },
+    { title: '止盈', dataIndex: 'takeProfit', key: 'takeProfit', render: (v?: number) => v ? formatPrice(v) : '-' },
     {
       title: '操作',
       key: 'action',
@@ -216,15 +217,15 @@ const Trading: React.FC = () => {
       <Tag color={v === 'buy' ? 'green' : 'red'}>{v === 'buy' ? '买入' : '卖出'}</Tag>
     )},
     { title: '数量', dataIndex: 'amount', key: 'amount' },
-    { title: '价格', dataIndex: 'price', key: 'price', render: (v: number) => `$${v.toFixed(6)}` },
-    { title: '总额', dataIndex: 'total', key: 'total', render: (v: number) => `$${v.toFixed(2)}` },
+    { title: '价格', dataIndex: 'price', key: 'price', render: (v: number) => formatPrice(v) },
+    { title: '总额', dataIndex: 'total', key: 'total', render: (v: number) => formatNumber(v, { prefix: '$' }) },
     {
       title: '盈亏',
       dataIndex: 'pnl',
       key: 'pnl',
       render: (v?: number) => v !== undefined ? (
         <span style={{ color: v >= 0 ? '#52c41a' : '#ff4d4f' }}>
-          {v >= 0 ? '+' : ''}{v.toFixed(2)} USD
+          {formatNumber(v, { prefix: v >= 0 ? '+$' : '$' })}
         </span>
       ) : '-',
     },

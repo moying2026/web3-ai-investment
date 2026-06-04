@@ -3,6 +3,7 @@ import { Row, Col, Card, Statistic, Table, Tag } from 'antd';
 import { TrophyOutlined, PercentageOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
 import { mockSimStats, mockTrades } from '../../mock/data';
+import { formatPrice, formatNumber } from '../../utils/format';
 
 const SimStats: React.FC = () => {
   const chartOption = {
@@ -22,9 +23,9 @@ const SimStats: React.FC = () => {
     { title: '时间', dataIndex: 'createdAt', key: 'createdAt', render: (v: string) => new Date(v).toLocaleString() },
     { title: '代币', dataIndex: 'symbol', key: 'symbol' },
     { title: '方向', dataIndex: 'side', key: 'side', render: (v: string) => <Tag color={v === 'buy' ? 'green' : 'red'}>{v === 'buy' ? '买入' : '卖出'}</Tag> },
-    { title: '价格', dataIndex: 'price', key: 'price', render: (v: number) => `$${v.toFixed(6)}` },
+    { title: '价格', dataIndex: 'price', key: 'price', render: (v: number) => formatPrice(v) },
     { title: '盈亏', dataIndex: 'pnl', key: 'pnl', render: (v?: number) => v !== undefined ? (
-      <span style={{ color: v >= 0 ? '#52c41a' : '#ff4d4f' }}>{v >= 0 ? '+' : ''}{v.toFixed(2)}</span>
+      <span style={{ color: v >= 0 ? '#52c41a' : '#ff4d4f' }}>{formatNumber(v, { prefix: v >= 0 ? '+' : '' })}</span>
     ) : '-' },
     { title: '模式', dataIndex: 'mode', key: 'mode', render: (v: string) => <Tag>{v === 'ai' ? 'AI' : '手动'}</Tag> },
   ];

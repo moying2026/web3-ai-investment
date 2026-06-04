@@ -4,7 +4,8 @@ import { Row, Col, Card, Tag, Descriptions, Button, Space, Table, Divider, Spin,
 import { ShoppingCartOutlined, ArrowLeftOutlined, ReloadOutlined } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
 import type { Token, Snapshot } from '../../types';
-import api, { tokenApi } from '../../services/api';
+import api, { tokenApi, auditApi, dynamicApi } from '../../services/api';
+import { formatPrice, formatVolume, formatSupply, formatPercent } from '../../utils/format';
 
 // 生成 mock K线数据
 function generateKlineData(period: string, basePrice: number) {
@@ -45,6 +46,8 @@ const TokenDetail: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [issuer, setIssuer] = useState<any>(null);
   const [klinePeriod, setKlinePeriod] = useState<string>('1h');
+  const [auditData, setAuditData] = useState<any>(null);
+  const [dynamicData, setDynamicData] = useState<any>(null);
 
   useEffect(() => {
     if (!chain || !address) return;
@@ -67,6 +70,13 @@ const TokenDetail: React.FC = () => {
       .then(data => setIssuer(data))
       .catch(() => {});
   }, [(token as any)?.creator_address]);
+
+  // 加载审计和动态数据
+  useEffect(() => {
+    if (!chain || !address) return;
+    auditApi.get(chain, address).then(data => setAuditData(data)).catch(() => {});
+    dynamicApi.get(chain, address).then(data => setDynamicData(data)).catch(() => {});
+  }, [chain, address]);
 
   if (loading) {
     return <Spin size="large" style={{ display: 'block', margin: '100px auto' }} />;
@@ -168,7 +178,17 @@ const TokenDetail: React.FC = () => {
     yAxis: {
       type: 'value' as const,
       scale: true,
-      axisLabel: { formatter: (v: number) => v < 0.01 ? v.toExponential(2) : v.toFixed(4) },
+      axisLabel: { formatter: (v: number) => {
+        if (v === 0) return '0';
+        if (Math.abs(v) < 1) {
+          const s = Math.abs(v).toFixed(20).replace(/0+$/, '');
+          const dec = (s.split('.')[1] || '').length;
+          return v.toFixed(Math.min(18, Math.max(8, dec)));
+        }
+        if (v >= 1e6) return `${(v / 1e6).toFixed(1)}M`;
+        if (v >= 1e3) return `${(v / 1e3).toFixed(0)}K`;
+        return v.toFixed(2);
+      } },
     },
     dataZoom: [
       { type: 'inside' as const, start: 60, end: 100 },
@@ -191,11 +211,11 @@ const TokenDetail: React.FC = () => {
   // 快照表格列
   const snapshotColumns = [
     { title: '时间', dataIndex: 'created_at', key: 'created_at', render: (v: string) => new Date(v).toLocaleString() },
-    { title: '价格', dataIndex: 'price', key: 'price', render: (v: string) => `$${parseFloat(v).toFixed(6)}` },
-    { title: '成交量', dataIndex: 'volume', key: 'volume', render: (v: string) => `$${(parseFloat(v || '0') / 1000).toFixed(0)}K` },
+    { title: '价格', dataIndex: 'price', key: 'price', render: (v: string) => formatPrice(v) },
+    { title: '成交量', dataIndex: 'volume', key: 'volume', render: (v: string) => formatVolume(v) },
     { title: '持有人', dataIndex: 'holders', key: 'holders' },
-    { title: '流动性', dataIndex: 'liquidity', key: 'liquidity', render: (v: string) => `$${(parseFloat(v || '0') / 1000).toFixed(0)}K` },
-    { title: '市值', dataIndex: 'market_cap', key: 'market_cap', render: (v: string) => `$${(parseFloat(v || '0') / 1e6).toFixed(2)}M` },
+    { title: '流动性', dataIndex: 'liquidity', key: 'liquidity', render: (v: string) => formatVolume(v) },
+    { title: '市值', dataIndex: 'market_cap', key: 'market_cap', render: (v: string) => formatVolume(v) },
   ];
 
   const chainMap: Record<string, string> = { '56': 'BSC', 'CT_501': 'SOL', '1': 'ETH', '8453': 'Base' };
@@ -212,12 +232,22 @@ const TokenDetail: React.FC = () => {
       <Card style={{ marginBottom: 16 }}>
         <Row gutter={24} align="middle">
           <Col>
-            <div style={{
-              width: 48, height: 48, borderRadius: '50%', background: '#1890ff', color: '#fff',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 20, fontWeight: 'bold',
-            }}>
-              {token.symbol?.charAt(0) || '?'}
+            <div style={{ position: 'relative', width: 48, height: 48 }}>
+              {t.icon && (
+                <img
+                  src={`https://www.binance.com${t.icon}`}
+                  alt=""
+                  style={{ width: 48, height: 48, borderRadius: '50%', position: 'absolute' }}
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                />
+              )}
+              <div style={{
+                width: 48, height: 48, borderRadius: '50%', background: '#1890ff', color: '#fff',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 20, fontWeight: 'bold',
+              }}>
+                {token.symbol?.charAt(0) || '?'}
+              </div>
             </div>
           </Col>
           <Col flex="auto">
@@ -281,21 +311,25 @@ const TokenDetail: React.FC = () => {
         <Col span={8}>
           <Card title="📋 基础数据" size="small">
             <Descriptions column={1} size="small">
-              <Descriptions.Item label="当前价格">${price < 0.01 ? price.toFixed(8) : price.toFixed(4)}</Descriptions.Item>
-              <Descriptions.Item label="首笔价格">${parseFloat(t.price_first || '0').toFixed(6)}</Descriptions.Item>
+              <Descriptions.Item label="当前价格">{formatPrice(price)}</Descriptions.Item>
+              <Descriptions.Item label="首笔价格">{formatPrice(t.price_first)}</Descriptions.Item>
               <Descriptions.Item label="1h涨跌">
-                <span style={{ color: change1h >= 0 ? '#52c41a' : '#ff4d4f' }}>{change1h >= 0 ? '+' : ''}{change1h.toFixed(2)}%</span>
+                <span style={{ color: change1h >= 0 ? '#52c41a' : '#ff4d4f' }}>{formatPercent(change1h)}</span>
               </Descriptions.Item>
               <Descriptions.Item label="24h涨跌">
-                <span style={{ color: change24h >= 0 ? '#52c41a' : '#ff4d4f' }}>{change24h >= 0 ? '+' : ''}{change24h.toFixed(2)}%</span>
+                <span style={{ color: change24h >= 0 ? '#52c41a' : '#ff4d4f' }}>{formatPercent(change24h)}</span>
               </Descriptions.Item>
-              <Descriptions.Item label="24h成交量">${volume24h >= 1e6 ? `${(volume24h / 1e6).toFixed(2)}M` : volume24h >= 1e3 ? `${(volume24h / 1e3).toFixed(0)}K` : volume24h.toFixed(0)}</Descriptions.Item>
-              <Descriptions.Item label="市值">${marketCap >= 1e6 ? `${(marketCap / 1e6).toFixed(2)}M` : marketCap.toFixed(0)}</Descriptions.Item>
-              <Descriptions.Item label="流动性">${liquidity >= 1e6 ? `${(liquidity / 1e6).toFixed(2)}M` : `${(liquidity / 1e3).toFixed(0)}K`}</Descriptions.Item>
+              <Descriptions.Item label="24h成交量">{formatVolume(volume24h)}</Descriptions.Item>
+              <Descriptions.Item label="市值">{formatVolume(marketCap)}</Descriptions.Item>
+              <Descriptions.Item label="流动性">{formatVolume(liquidity)}</Descriptions.Item>
               <Descriptions.Item label="持有人">{token.holders?.toLocaleString()}</Descriptions.Item>
-              <Descriptions.Item label="总供应量">{t.total_supply ? parseFloat(t.total_supply).toLocaleString() : '-'}</Descriptions.Item>
-              <Descriptions.Item label="销毁量">{t.burned_amount ? parseFloat(t.burned_amount).toLocaleString() : '-'}</Descriptions.Item>
-              <Descriptions.Item label="流通量">{t.circulating_supply ? parseFloat(t.circulating_supply).toLocaleString() : '-'}</Descriptions.Item>
+              <Descriptions.Item label="总供应量">{formatSupply(t.total_supply)}</Descriptions.Item>
+              <Descriptions.Item label="销毁量">{formatSupply(t.burned_amount)}</Descriptions.Item>
+              <Descriptions.Item label="流通量">{formatSupply(t.circulating_supply)}</Descriptions.Item>
+              <Descriptions.Item label="最大供应量">{formatSupply(t.max_supply)}</Descriptions.Item>
+              <Descriptions.Item label="可增发">{t.is_mintable != null ? (t.is_mintable ? '✅ 是' : '❌ 否') : '-'}</Descriptions.Item>
+              <Descriptions.Item label="可升级">{t.is_upgradeable != null ? (t.is_upgradeable ? '✅ 是' : '❌ 否') : '-'}</Descriptions.Item>
+              <Descriptions.Item label="合约分析">{t.contract_analysis || '-'}</Descriptions.Item>
               <Descriptions.Item label="创建时间">{t.launch_time ? new Date(t.launch_time).toLocaleString() : t.created_at}</Descriptions.Item>
             </Descriptions>
           </Card>
@@ -326,6 +360,48 @@ const TokenDetail: React.FC = () => {
               <Descriptions.Item label="黑名单">{auditDetails.blacklist}</Descriptions.Item>
               <Descriptions.Item label="貔貅检测">{auditDetails.honeypot}</Descriptions.Item>
             </Descriptions>
+          </Card>
+        </Col>
+      </Row>
+
+      {/* 合约审计 + Smart Money */}
+      <Row gutter={16} style={{ marginTop: 16 }}>
+        <Col span={12}>
+          <Card title="🔒 合约审计" size="small">
+            {auditData ? (
+              <Descriptions column={1} size="small">
+                <Descriptions.Item label="风险等级">
+                  <Tag color={auditData.risk_level === 'high' ? 'red' : auditData.risk_level === 'medium' ? 'orange' : 'green'}>
+                    {auditData.risk_level || auditData.riskLevel || '-'}
+                  </Tag>
+                </Descriptions.Item>
+                <Descriptions.Item label="买入税率">{auditData.buy_tax != null ? `${auditData.buy_tax}%` : '-'}</Descriptions.Item>
+                <Descriptions.Item label="卖出税率">{auditData.sell_tax != null ? `${auditData.sell_tax}%` : '-'}</Descriptions.Item>
+                <Descriptions.Item label="蜜罐检测">{auditData.is_honeypot ? '⚠️ 疑似蜜罐' : '✅ 安全'}</Descriptions.Item>
+                <Descriptions.Item label="恶意函数">{auditData.has_malicious_code ? '⚠️ 检测到' : '✅ 未检测到'}</Descriptions.Item>
+                <Descriptions.Item label="合约验证">{auditData.is_verified ? '✅ 已验证' : '❌ 未验证'}</Descriptions.Item>
+                <Descriptions.Item label="所有权放弃">{auditData.is_ownership_renounced ? '✅ 已放弃' : '❌ 未放弃'}</Descriptions.Item>
+              </Descriptions>
+            ) : (
+              <div style={{ textAlign: 'center', color: '#8c8c8c', padding: 30 }}>暂无审计数据</div>
+            )}
+          </Card>
+        </Col>
+        <Col span={12}>
+          <Card title="🧠 Smart Money / Dev 持仓" size="small">
+            {dynamicData ? (
+              <Descriptions column={1} size="small">
+                <Descriptions.Item label="Smart Money 持仓">{dynamicData.smart_money_holding_percent != null ? `${dynamicData.smart_money_holding_percent.toFixed(2)}%` : '-'}</Descriptions.Item>
+                <Descriptions.Item label="Smart Money 数量">{dynamicData.smart_money_count ?? '-'}</Descriptions.Item>
+                <Descriptions.Item label="Dev 持仓">{dynamicData.dev_holding_percent != null ? `${dynamicData.dev_holding_percent.toFixed(2)}%` : '-'}</Descriptions.Item>
+                <Descriptions.Item label="KOL 持仓">{dynamicData.kol_holding_percent != null ? `${dynamicData.kol_holding_percent.toFixed(2)}%` : '-'}</Descriptions.Item>
+                <Descriptions.Item label="前10持仓占比">{dynamicData.holders_top10_percent != null ? `${parseFloat(dynamicData.holders_top10_percent).toFixed(1)}%` : '-'}</Descriptions.Item>
+                <Descriptions.Item label="24h交易笔数">{dynamicData.count_24h ?? '-'}</Descriptions.Item>
+                <Descriptions.Item label="24h独立交易者">{dynamicData.unique_trader_24h ?? '-'}</Descriptions.Item>
+              </Descriptions>
+            ) : (
+              <div style={{ textAlign: 'center', color: '#8c8c8c', padding: 30 }}>暂无动态数据</div>
+            )}
           </Card>
         </Col>
       </Row>

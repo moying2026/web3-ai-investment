@@ -13,6 +13,7 @@ import { useNavigate } from 'react-router-dom';
 import type { Token, Stats } from '../../types';
 import { tokenApi, statsApi, createNewTokenSSE } from '../../services/api';
 import { mockPortfolioCurve } from '../../mock/data';
+import { formatPrice, formatVolume, formatSupply, formatPercent } from '../../utils/format';
 
 // 筛选参数类型
 interface FilterParams {
@@ -271,10 +272,7 @@ const Dashboard: React.FC = () => {
       width: 120,
       sorter: true,
       sortOrder: sortField === 'price_latest' ? (sortOrder === 'asc' ? 'ascend' as const : 'descend' as const) : undefined,
-      render: (_: any, record: Token) => {
-        const price = parseFloat(record.price_latest);
-        return price < 0.01 ? `$${price.toFixed(8)}` : `$${price.toFixed(4)}`;
-      },
+      render: (_: any, record: Token) => formatPrice(record.price_latest),
     },
     {
       title: '1h涨跌',
@@ -288,7 +286,7 @@ const Dashboard: React.FC = () => {
         const v = parseFloat(record.percent_change_1h);
         return (
           <span style={{ color: v >= 0 ? '#52c41a' : '#ff4d4f' }}>
-            {v >= 0 ? '+' : ''}{v.toFixed(2)}%
+            {formatPercent(v)}
           </span>
         );
       },
@@ -300,12 +298,7 @@ const Dashboard: React.FC = () => {
       width: 120,
       sorter: true,
       sortOrder: sortField === 'volume_24h' ? (sortOrder === 'asc' ? 'ascend' as const : 'descend' as const) : undefined,
-      render: (_: any, record: Token) => {
-        const v = parseFloat(record.volume_24h);
-        if (v >= 1e6) return `$${(v / 1e6).toFixed(1)}M`;
-        if (v >= 1e3) return `$${(v / 1e3).toFixed(0)}K`;
-        return `$${v.toFixed(0)}`;
-      },
+      render: (_: any, record: Token) => formatVolume(record.volume_24h),
     },
     {
       title: '流动性',
@@ -314,12 +307,7 @@ const Dashboard: React.FC = () => {
       width: 100,
       sorter: true,
       sortOrder: sortField === 'liquidity' ? (sortOrder === 'asc' ? 'ascend' as const : 'descend' as const) : undefined,
-      render: (_: any, record: Token) => {
-        const v = parseFloat(record.liquidity);
-        if (v >= 1e6) return `$${(v / 1e6).toFixed(1)}M`;
-        if (v >= 1e3) return `$${(v / 1e3).toFixed(0)}K`;
-        return `$${v.toFixed(0)}`;
-      },
+      render: (_: any, record: Token) => formatVolume(record.liquidity),
     },
     {
       title: '持有人',
@@ -334,42 +322,21 @@ const Dashboard: React.FC = () => {
       key: 'total_supply',
       width: 120,
       hidden: true,
-      render: (_: any, record: Token) => {
-        const v = (record as any).total_supply;
-        if (!v) return '-';
-        const n = parseFloat(v);
-        if (n >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
-        if (n >= 1e6) return `${(n / 1e6).toFixed(2)}M`;
-        return n.toLocaleString();
-      },
+      render: (_: any, record: Token) => formatSupply((record as any).total_supply),
     },
     {
       title: '销毁量',
       key: 'burned_amount',
       width: 100,
       hidden: true,
-      render: (_: any, record: Token) => {
-        const v = (record as any).burned_amount;
-        if (!v) return '-';
-        const n = parseFloat(v);
-        if (n >= 1e6) return `${(n / 1e6).toFixed(2)}M`;
-        if (n >= 1e3) return `${(n / 1e3).toFixed(0)}K`;
-        return n.toFixed(0);
-      },
+      render: (_: any, record: Token) => formatSupply((record as any).burned_amount),
     },
     {
       title: '流通量',
       key: 'circulating_supply',
       width: 120,
       hidden: true,
-      render: (_: any, record: Token) => {
-        const v = (record as any).circulating_supply;
-        if (!v) return '-';
-        const n = parseFloat(v);
-        if (n >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
-        if (n >= 1e6) return `${(n / 1e6).toFixed(2)}M`;
-        return n.toLocaleString();
-      },
+      render: (_: any, record: Token) => formatSupply((record as any).circulating_supply),
     },
     {
       title: '标签',
@@ -560,6 +527,14 @@ const Dashboard: React.FC = () => {
               <Select.Option value="low">低风险</Select.Option>
               <Select.Option value="medium">中风险</Select.Option>
               <Select.Option value="high">高风险</Select.Option>
+            </Select>
+          </Form.Item>
+          <Form.Item label="审计风险" name="audit_risk" initialValue="all">
+            <Select style={{ width: 120 }}>
+              <Select.Option value="all">全部</Select.Option>
+              <Select.Option value="safe">安全</Select.Option>
+              <Select.Option value="warning">警告</Select.Option>
+              <Select.Option value="danger">危险</Select.Option>
             </Select>
           </Form.Item>
           <Form.Item label="发行方" name="creator">

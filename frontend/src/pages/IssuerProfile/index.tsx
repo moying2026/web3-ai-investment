@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Card, Table, Tag, Descriptions, Row, Col, Statistic, Progress, Spin, Button, Space, message } from 'antd';
 import { ArrowLeftOutlined, UserOutlined } from '@ant-design/icons';
 import api from '../../services/api';
+import { formatPrice, formatVolume } from '../../utils/format';
 
 interface IssuerData {
   id: number;
@@ -52,20 +53,12 @@ const IssuerProfile: React.FC = () => {
     {
       title: '价格',
       key: 'price',
-      render: (_: any, record: any) => {
-        const p = parseFloat(record.price_latest);
-        return p < 0.01 ? `$${p.toFixed(8)}` : `$${p.toFixed(4)}`;
-      },
+      render: (_: any, record: any) => formatPrice(record.price_latest),
     },
     {
       title: '市值',
       key: 'market_cap',
-      render: (_: any, record: any) => {
-        const v = parseFloat(record.market_cap || '0');
-        if (v >= 1e6) return `$${(v / 1e6).toFixed(2)}M`;
-        if (v >= 1e3) return `$${(v / 1e3).toFixed(0)}K`;
-        return `$${v.toFixed(0)}`;
-      },
+      render: (_: any, record: any) => formatVolume(record.market_cap),
     },
     { title: '持有人', dataIndex: 'holders', key: 'holders' },
     {
