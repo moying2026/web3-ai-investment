@@ -5,6 +5,7 @@ import { initExtendedTables, fetchExtendedData } from './binanceExtendedApi';
 import { initAnalysisTable, analyzeNewTokens } from './aiAnalysisService';
 import { executeAutoBuy, checkAndClosePositions } from './simTradeService';
 import { db } from '../db/database';
+import { registerModule, isModuleRunning, recordRun, initSystemControl } from './systemControl';
 import {
   isNewToken, insertToken, updateTokenLatestPrice,
   createTrackingPlans, getPendingSnapshotPlans, executeSnapshot,
@@ -255,8 +256,22 @@ export async function checkAndExecuteSnapshots(): Promise<void> {
 export function startPolling(): void {
   console.log('[Polling] 启动轮询服务...');
 
+  // 初始化系统控制
+  initSystemControl();
+
+  // 注册模块
+  registerModule('polling', '热门轮询', 3000);
+  registerModule('discovery', '新币发现流', 90000);
+  registerModule('ai', 'AI 评估引擎', 30000);
+  registerModule('trading', '模拟交易', 10000);
+  registerModule('trench', '战壕拦截', 30000);
+
   // 代币数据：每 3 秒
-  setInterval(pollTokenData, 3000);
+  setInterval(() => {
+    if (!isModuleRunning('polling')) return;
+    pollTokenData();
+    recordRun('polling', true);
+  }, 3000);
 
   // 社交话题：每 60 秒
   setInterval(pollSocialTopics, 60000);
@@ -264,7 +279,7 @@ export function startPolling(): void {
   // 快照检查：每 10 秒
   setInterval(checkAndExecuteSnapshots, 10000);
 
-  // 链上数据：每 3 天自动同步一次（变动不大，节省流量）
+  // 链上数据：每 3 天自动同步一次
   setInterval(fetchOnchainSupplyData, 3 * 24 * 60 * 60 * 1000);
 
   // 发行方数据：每 24 小时自动同步一次
@@ -274,19 +289,26 @@ export function startPolling(): void {
   initExtendedTables();
   setInterval(fetchExtendedData, 60000);
 
-  // AI 分析 + 自动模拟买入：每 30 秒（分析新币后触发买入）
+  // AI 分析 + 自动模拟买入：每 30 秒
   initAnalysisTable();
   setInterval(() => {
-    const results = analyzeNewTokens();
-    if (results.length > 0) {
-      const buyCount = executeAutoBuy(results);
-      if (buyCount > 0) console.log(`[Sim] AI 触发 ${buyCount} 笔自动买入`);
+    if (!isModuleRunning('ai')) return;
+    try {
+      const results = analyzeNewTokens();
+      if (results.length > 0) {
+        const buyCount = executeAutoBuy(results);
+        if (buyCount > 0) console.log(`[Sim] AI 触发 ${buyCount} 笔自动买入`);
+      }
+      recordRun('ai', true, undefined, { analyzed: results.length });
+    } catch (err) {
+      recordRun('ai', false, String(err));
     }
   }, 30000);
 
-  // 多 Agent 评分：每 30 秒（对新币运行 5 个 Agent 评分）
+  // 多 Agent 评分：每 30 秒
   const { evaluateDecision, storeAgentScores } = require('./agents/decisionAgent');
   setInterval(() => {
+    if (!isModuleRunning('trench')) return;
     try {
       const newTokens = db.prepare(`
         SELECT t.chain_id, t.contract_address, t.symbol
@@ -295,25 +317,39 @@ export function startPolling(): void {
         WHERE ag.id IS NULL AND t.first_seen_at > datetime('now', '-24 hours')
         ORDER BY t.first_seen_at DESC LIMIT 5
       `).all() as any[];
+      let scored = 0;
       for (const token of newTokens) {
         try {
           const decision = evaluateDecision({ chainId: token.chain_id, contractAddress: token.contract_address, symbol: token.symbol });
           storeAgentScores(token.chain_id, token.contract_address, decision);
+          scored++;
           console.log(`[Agent] ${token.symbol}: score=${decision.score} rec=${decision.recommendation} confidence=${decision.confidence.toFixed(2)}`);
         } catch (e) {
           console.error(`[Agent] 评分失败 ${token.symbol}:`, e);
         }
       }
+      recordRun('trench', true, undefined, { scored });
     } catch (e) {
-      console.error('[Agent] 轮询失败:', e);
+      recordRun('trench', false, String(e));
     }
   }, 30000);
 
   // 持仓检查（止盈止损）：每 10 秒
-  setInterval(checkAndClosePositions, 10000);
+  setInterval(() => {
+    if (!isModuleRunning('trading')) return;
+    try {
+      const closed = checkAndClosePositions();
+      recordRun('trading', true, undefined, { closed });
+    } catch (err) {
+      recordRun('trading', false, String(err));
+    }
+  }, 10000);
 
-  // 新币发现流：每 90 秒（获取最新上线代币）
-  setInterval(pollLatestTokens, 90000);
+  // 新币发现流：每 90 秒
+  setInterval(() => {
+    if (!isModuleRunning('discovery')) return;
+    pollLatestTokens();
+  }, 90000);
 
   // 立即执行一次
   pollTokenData();

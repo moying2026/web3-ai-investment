@@ -714,3 +714,63 @@ router.get('/thresholds', (_req: Request, res: Response) => {
     res.status(500).json({ code: -1, message: err.message });
   }
 });
+
+// ============ 系统控制 API ============
+
+// GET /api/system/status — 所有模块状态
+router.get('/system/status', (_req: Request, res: Response) => {
+  try {
+    const { getAllModuleStatuses } = require('../services/systemControl');
+    const statuses = getAllModuleStatuses();
+    res.json({ code: 0, data: statuses });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// POST /api/system/:moduleId/toggle — 切换模块状态
+router.post('/system/:moduleId/toggle', (req: Request, res: Response) => {
+  try {
+    const moduleId = String(req.params.moduleId);
+    const { running } = req.body;
+    const { toggleModule, getModuleStatus } = require('../services/systemControl');
+
+    if (typeof running !== 'boolean') {
+      res.status(400).json({ code: -1, message: 'running must be a boolean' });
+      return;
+    }
+
+    const success = toggleModule(moduleId, running);
+    if (!success) {
+      res.status(404).json({ code: -1, message: `Module ${moduleId} not found` });
+      return;
+    }
+
+    const status = getModuleStatus(moduleId);
+    res.json({ code: 0, data: status });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// POST /api/system/toggle-all — 一键启停所有模块
+router.post('/system/toggle-all', (req: Request, res: Response) => {
+  try {
+    const { running } = req.body;
+    const { toggleModule, getAllModuleStatuses } = require('../services/systemControl');
+
+    if (typeof running !== 'boolean') {
+      res.status(400).json({ code: -1, message: 'running must be a boolean' });
+      return;
+    }
+
+    const statuses = getAllModuleStatuses();
+    for (const status of statuses) {
+      toggleModule(status.id, running);
+    }
+
+    res.json({ code: 0, data: { message: `All modules ${running ? 'started' : 'paused'}`, count: statuses.length } });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
