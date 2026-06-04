@@ -210,6 +210,64 @@ export function initDatabase(): void {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_social_topics_time ON social_topics(create_time)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_tracking_plans_executed ON tracking_plans(executed, target_at)`);
 
+  // ============ 规则引擎表 ============
+
+  // Agent 独立评分记录
+  db.exec(`CREATE TABLE IF NOT EXISTS agent_scores (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chain_id TEXT NOT NULL,
+    contract_address TEXT NOT NULL,
+    agent_type TEXT NOT NULL CHECK(agent_type IN ('risk','market','issuer','onchain','decision')),
+    score REAL NOT NULL CHECK(score >= 0 AND score <= 100),
+    confidence REAL DEFAULT 0,
+    details_json TEXT,
+    evaluated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(chain_id, contract_address, agent_type, evaluated_at)
+  )`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_agent_scores_token ON agent_scores(chain_id, contract_address)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_agent_scores_type ON agent_scores(agent_type)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_agent_scores_time ON agent_scores(evaluated_at)`);
+
+  // 策略规则配置
+  db.exec(`CREATE TABLE IF NOT EXISTS strategy_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    rule_id TEXT UNIQUE NOT NULL,
+    scenario TEXT NOT NULL CHECK(scenario IN ('new_coin','trending','anomaly')),
+    name TEXT NOT NULL,
+    description TEXT,
+    conditions_json TEXT NOT NULL,
+    action TEXT NOT NULL,
+    action_params_json TEXT,
+    priority INTEGER DEFAULT 0,
+    validation_stage TEXT DEFAULT 'full_validation'
+      CHECK(validation_stage IN ('full_validation','filtering','production')),
+    min_win_rate REAL,
+    min_sample_size INTEGER DEFAULT 10,
+    enabled INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  )`);
+
+  // 策略验证记录
+  db.exec(`CREATE TABLE IF NOT EXISTS strategy_validations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    rule_id TEXT NOT NULL,
+    chain_id TEXT NOT NULL,
+    contract_address TEXT NOT NULL,
+    symbol TEXT,
+    predicted TEXT NOT NULL,
+    actual_result TEXT,
+    entry_price TEXT,
+    exit_price TEXT,
+    pnl REAL,
+    pnl_percent REAL,
+    holding_minutes INTEGER,
+    trade_id TEXT,
+    validated_at TEXT DEFAULT (datetime('now'))
+  )`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_sv_rule ON strategy_validations(rule_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_sv_token ON strategy_validations(chain_id, contract_address)`);
+
   console.log('[DB] 数据库初始化完成:', DB_PATH);
 }
 

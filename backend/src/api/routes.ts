@@ -121,6 +121,85 @@ router.get('/issuers/:address', (req: Request, res: Response) => {
   }
 });
 
+// GET /api/issuer/:address — 发行方画像详情（含风险评估）
+router.get('/issuer/:address', (req: Request, res: Response) => {
+  try {
+    const address = String(req.params.address);
+    const profile = (db.prepare('SELECT * FROM issuer_profiles WHERE issuer_address = ?').get(address)) as any;
+    if (!profile) { res.status(404).json({ code: -1, message: '发行方未找到' }); return; }
+
+    // 统计迁移情况
+    const migratedCount = (db.prepare(
+      'SELECT COUNT(*) as c FROM issuer_tokens WHERE issuer_address = ? AND migrated = 1'
+    ).get(address) as any).c;
+    const unmigratedCount = (db.prepare(
+      'SELECT COUNT(*) as c FROM issuer_tokens WHERE issuer_address = ? AND (migrated = 0 OR migrated IS NULL)'
+    ).get(address) as any).c;
+    const migrationRate = profile.total_tokens > 0 ? migratedCount / profile.total_tokens : 0;
+
+    // 风险评估
+    let riskLevel = 'low';
+    const riskReasons: string[] = [];
+    if (profile.total_tokens > 100) {
+      riskLevel = 'high';
+      riskReasons.push(`发行代币数量过多: ${profile.total_tokens}`);
+    } else if (profile.total_tokens > 20) {
+      riskLevel = 'medium';
+      riskReasons.push(`发行代币数量较多: ${profile.total_tokens}`);
+    }
+    if (migrationRate < 0.1 && profile.total_tokens > 5) {
+      riskLevel = 'high';
+      riskReasons.push(`迁移率极低: ${(migrationRate * 100).toFixed(1)}%`);
+    } else if (migrationRate < 0.3 && profile.total_tokens > 5) {
+      if (riskLevel === 'low') riskLevel = 'medium';
+      riskReasons.push(`迁移率偏低: ${(migrationRate * 100).toFixed(1)}%`);
+    }
+    if (riskReasons.length === 0) riskReasons.push('无明显风险');
+
+    res.json({
+      code: 0,
+      data: {
+        issuerAddress: profile.issuer_address,
+        totalTokens: profile.total_tokens,
+        aliveTokens: profile.alive_tokens,
+        deadTokens: profile.dead_tokens,
+        migratedCount,
+        unmigratedCount,
+        survivalRate: profile.survival_rate,
+        migrationRate,
+        firstSeenAt: profile.first_seen_at,
+        lastSeenAt: profile.last_seen_at,
+        riskLevel,
+        riskReasons,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/issuer/:address/tokens — 发行方历史代币列表
+router.get('/issuer/:address/tokens', (req: Request, res: Response) => {
+  try {
+    const address = String(req.params.address);
+    const page = parseInt(qs(req.query.page) || '1') || 1;
+    const pageSize = Math.min(parseInt(qs(req.query.pageSize) || '50') || 50, 200);
+    const offset = (page - 1) * pageSize;
+
+    const total = (db.prepare(
+      'SELECT COUNT(*) as c FROM issuer_tokens WHERE issuer_address = ?'
+    ).get(address) as any).c;
+
+    const data = db.prepare(
+      'SELECT * FROM issuer_tokens WHERE issuer_address = ? ORDER BY create_time DESC LIMIT ? OFFSET ?'
+    ).all(address, pageSize, offset);
+
+    res.json({ code: 0, data: { data, total, page, pageSize } });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
 // GET /api/social-topics — 社交热度话题
 router.get('/social-topics', (req: Request, res: Response) => {
   try {
@@ -322,6 +401,278 @@ router.put('/sim/trades/:id/close', (req: Request, res: Response) => {
 
     const updated = (db.prepare('SELECT * FROM sim_trades WHERE trade_id = ?')).get(tradeId);
     res.json({ code: 0, data: updated });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// ============ AI 分析准确性 API ============
+
+// GET /api/sim/stats — 模拟盘统计
+router.get('/sim/stats', (_req: Request, res: Response) => {
+  try {
+    const total = (db.prepare("SELECT COUNT(*) as c FROM sim_trades").get() as any).c;
+    const openCount = (db.prepare("SELECT COUNT(*) as c FROM sim_trades WHERE status = 'OPEN'").get() as any).c;
+    const closedCount = (db.prepare("SELECT COUNT(*) as c FROM sim_trades WHERE status = 'CLOSED'").get() as any).c;
+    const winCount = (db.prepare("SELECT COUNT(*) as c FROM sim_trades WHERE status = 'CLOSED' AND CAST(pnl AS REAL) > 0").get() as any).c;
+    const lossCount = (db.prepare("SELECT COUNT(*) as c FROM sim_trades WHERE status = 'CLOSED' AND CAST(pnl AS REAL) <= 0").get() as any).c;
+    const totalPnl = (db.prepare("SELECT COALESCE(SUM(CAST(pnl AS REAL)), 0) as s FROM sim_trades WHERE status = 'CLOSED'").get() as any).s;
+    const avgHolding = (db.prepare("SELECT COALESCE(AVG(holding_duration_minutes), 0) as a FROM sim_trades WHERE status = 'CLOSED' AND holding_duration_minutes IS NOT NULL").get() as any).a;
+    const portfolio = (db.prepare("SELECT * FROM portfolio_state WHERE portfolio_id = 'main'").get() as any);
+    const maxDrawdown = portfolio ? parseFloat(portfolio.max_drawdown_percent || '0') : 0;
+    const winRate = closedCount > 0 ? (winCount / closedCount * 100) : 0;
+
+    // 按策略分布
+    const byStrategy = db.prepare(`
+      SELECT strategy, COUNT(*) as count,
+        SUM(CASE WHEN status = 'CLOSED' AND CAST(pnl AS REAL) > 0 THEN 1 ELSE 0 END) as wins,
+        COALESCE(SUM(CASE WHEN status = 'CLOSED' THEN CAST(pnl AS REAL) ELSE 0 END), 0) as total_pnl
+      FROM sim_trades GROUP BY strategy
+    `).all();
+
+    // 按链分布
+    const byChain = db.prepare(`
+      SELECT chain_id, COUNT(*) as count,
+        SUM(CASE WHEN status = 'CLOSED' AND CAST(pnl AS REAL) > 0 THEN 1 ELSE 0 END) as wins,
+        COALESCE(SUM(CASE WHEN status = 'CLOSED' THEN CAST(pnl AS REAL) ELSE 0 END), 0) as total_pnl
+      FROM sim_trades GROUP BY chain_id
+    `).all();
+
+    res.json({
+      code: 0,
+      data: {
+        total,
+        open: openCount,
+        closed: closedCount,
+        winCount,
+        lossCount,
+        winRate: winRate.toFixed(1) + '%',
+        totalPnl: parseFloat(totalPnl).toFixed(2),
+        avgHoldingMinutes: Math.round(avgHolding),
+        maxDrawdown: maxDrawdown.toFixed(2) + '%',
+        portfolio: {
+          totalValue: portfolio?.total_value || '10000',
+          availableBalance: portfolio?.available_balance || '10000',
+          lockedBalance: portfolio?.locked_balance || '0',
+        },
+        byStrategy,
+        byChain,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/ai/analysis — AI 评估分析统计
+router.get('/ai/analysis', (_req: Request, res: Response) => {
+  try {
+    const total = (db.prepare("SELECT COUNT(*) as c FROM ai_analysis").get() as any).c;
+    const avgScore = (db.prepare("SELECT COALESCE(AVG(score), 0) as a FROM ai_analysis").get() as any).a;
+
+    // 按推荐分类统计
+    const recDistribution = db.prepare(`
+      SELECT recommendation, COUNT(*) as count, AVG(score) as avg_score
+      FROM ai_analysis GROUP BY recommendation
+    `).all();
+
+    // 评分维度平均分（从 dimension_scores_json 解析）
+    const allAnalyses = db.prepare("SELECT dimension_scores_json FROM ai_analysis WHERE dimension_scores_json IS NOT NULL").all() as any[];
+    const dimTotals = { security: 0, smartMoney: 0, social: 0, issuer: 0, liquidity: 0 };
+    let dimCount = 0;
+    for (const a of allAnalyses) {
+      try {
+        const scores = JSON.parse(a.dimension_scores_json);
+        if (scores) {
+          dimTotals.security += scores.security || 0;
+          dimTotals.smartMoney += scores.smartMoney || 0;
+          dimTotals.social += scores.social || 0;
+          dimTotals.issuer += scores.issuer || 0;
+          dimTotals.liquidity += scores.liquidity || 0;
+          dimCount++;
+        }
+      } catch { /* skip */ }
+    }
+    const avgDimensions = dimCount > 0 ? {
+      security: (dimTotals.security / dimCount).toFixed(1),
+      smartMoney: (dimTotals.smartMoney / dimCount).toFixed(1),
+      social: (dimTotals.social / dimCount).toFixed(1),
+      issuer: (dimTotals.issuer / dimCount).toFixed(1),
+      liquidity: (dimTotals.liquidity / dimCount).toFixed(1),
+    } : null;
+
+    // 按策略统计（关联 sim_trades）
+    const strategyStats = db.prepare(`
+      SELECT st.strategy, COUNT(*) as trade_count,
+        AVG(aa.score) as avg_score,
+        SUM(CASE WHEN st.status = 'CLOSED' AND CAST(st.pnl AS REAL) > 0 THEN 1 ELSE 0 END) as wins
+      FROM sim_trades st
+      JOIN ai_analysis aa ON st.chain_id = aa.chain_id AND st.contract_address = aa.contract_address
+      WHERE st.trade_type = 'ai_auto'
+      GROUP BY st.strategy
+    `).all();
+
+    // 评分区间分布
+    const scoreBands = db.prepare(`
+      SELECT
+        CASE
+          WHEN score < 30 THEN '0-29'
+          WHEN score < 50 THEN '30-49'
+          WHEN score < 70 THEN '50-69'
+          ELSE '70-100'
+        END as band,
+        COUNT(*) as count
+      FROM ai_analysis GROUP BY band ORDER BY band
+    `).all();
+
+    res.json({
+      code: 0,
+      data: {
+        totalAnalyses: total,
+        avgScore: parseFloat(avgScore).toFixed(1),
+        recommendationDistribution: recDistribution,
+        avgDimensionScores: avgDimensions,
+        strategyStats,
+        scoreBands,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/sim/accuracy — AI 分析准确性统计
+router.get('/sim/accuracy', (_req: Request, res: Response) => {
+  try {
+    const { getAccuracyStats } = require('../services/simTradeService');
+    const stats = getAccuracyStats();
+    res.json({ code: 0, data: stats });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/analysis — AI 分析结果列表
+router.get('/analysis', (req: Request, res: Response) => {
+  try {
+    const page = parseInt(qs(req.query.page) || '1') || 1;
+    const pageSize = Math.min(parseInt(qs(req.query.pageSize) || '20') || 20, 100);
+    const offset = (page - 1) * pageSize;
+    const recommendation = qs(req.query.recommendation);
+
+    let where = '1=1';
+    const params: any[] = [];
+    if (recommendation) { where += ' AND recommendation = ?'; params.push(recommendation); }
+
+    const total = (db.prepare(`SELECT COUNT(*) as c FROM ai_analysis WHERE ${where}`)).get(...params) as any;
+    const data = (db.prepare(`SELECT * FROM ai_analysis WHERE ${where} ORDER BY analyzed_at DESC LIMIT ? OFFSET ?`)).all(...params, pageSize, offset);
+
+    // 解析 JSON 字段
+    const parsed = data.map((a: any) => ({
+      ...a,
+      reasons: safeJsonParse(a.reasons_json),
+      dimensionScores: safeJsonParse(a.dimension_scores_json),
+    }));
+
+    res.json({ code: 0, data: { data: parsed, total: total.c, page, pageSize } });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// ============ 规则引擎 API ============
+
+// GET /api/tokens/:chain/:address/similar — 同名/跨链检测
+router.get('/tokens/:chain/:address/similar', (req: Request, res: Response) => {
+  try {
+    const chain = String(req.params.chain);
+    const address = String(req.params.address);
+    const token = (db.prepare('SELECT symbol FROM tokens WHERE chain_id = ? AND contract_address = ?').get(chain, address)) as any;
+    if (!token) { res.status(404).json({ code: -1, message: '代币未找到' }); return; }
+    const { findSimilarTokens } = require('../services/tokenAnalyzer');
+    const result = findSimilarTokens(token.symbol, chain, address);
+    res.json({ code: 0, data: result });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/issuer/:address/risk — 发行方风险评估
+router.get('/issuer/:address/risk', (req: Request, res: Response) => {
+  try {
+    const address = String(req.params.address);
+    const { assessIssuerRisk } = require('../services/tokenAnalyzer');
+    const result = assessIssuerRisk(address);
+    res.json({ code: 0, data: result });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/tokens/:chain/:address/address-risk — 地址风险分析
+router.get('/tokens/:chain/:address/address-risk', (req: Request, res: Response) => {
+  try {
+    const chain = String(req.params.chain);
+    const address = String(req.params.address);
+    const token = (db.prepare('SELECT * FROM tokens WHERE chain_id = ? AND contract_address = ?').get(chain, address)) as any;
+    if (!token) { res.status(404).json({ code: -1, message: '代币未找到' }); return; }
+    const { scoreAddressRisk } = require('../services/tokenAnalyzer');
+    const result = scoreAddressRisk(token);
+    res.json({ code: 0, data: result });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/agents/score/:chain/:address — 多 Agent 评分
+router.get('/agents/score/:chain/:address', (req: Request, res: Response) => {
+  try {
+    const chain = String(req.params.chain);
+    const address = String(req.params.address);
+    const { evaluateDecision } = require('../services/agents/decisionAgent');
+    const result = evaluateDecision({ chainId: chain, contractAddress: address });
+    res.json({ code: 0, data: result });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/agents/scores — Agent 评分历史
+router.get('/agents/scores', (req: Request, res: Response) => {
+  try {
+    const agentType = qs(req.query.agent_type);
+    const page = parseInt(qs(req.query.page) || '1') || 1;
+    const pageSize = Math.min(parseInt(qs(req.query.pageSize) || '50') || 50, 200);
+    const offset = (page - 1) * pageSize;
+
+    let where = '1=1';
+    const params: any[] = [];
+    if (agentType) { where += ' AND agent_type = ?'; params.push(agentType); }
+
+    const total = (db.prepare(`SELECT COUNT(*) as c FROM agent_scores WHERE ${where}`).get(...params) as any).c;
+    const data = db.prepare(`SELECT * FROM agent_scores WHERE ${where} ORDER BY evaluated_at DESC LIMIT ? OFFSET ?`).all(...params, pageSize, offset);
+
+    res.json({ code: 0, data: { data, total, page, pageSize } });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/rules — 策略规则列表
+router.get('/rules', (_req: Request, res: Response) => {
+  try {
+    const rules = db.prepare('SELECT * FROM strategy_rules ORDER BY priority DESC').all();
+    res.json({ code: 0, data: rules });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/thresholds — 获取当前阈值配置
+router.get('/thresholds', (_req: Request, res: Response) => {
+  try {
+    const { THRESHOLDS } = require('../config/thresholds');
+    res.json({ code: 0, data: THRESHOLDS });
   } catch (err: any) {
     res.status(500).json({ code: -1, message: err.message });
   }

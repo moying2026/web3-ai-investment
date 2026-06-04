@@ -1,12 +1,16 @@
-import { fetchAllChainTokens, fetchSocialTopics, fetchPriceInfo } from './binanceApi';
+import { fetchAllChainTokens, fetchMemeRushList, fetchSocialTopics, fetchPriceInfo } from './binanceApi';
 import { fetchOnchainSupplyData } from './onchainService';
 import { fetchIssuerData } from './issuerService';
+import { initExtendedTables, fetchExtendedData } from './binanceExtendedApi';
+import { initAnalysisTable, analyzeNewTokens } from './aiAnalysisService';
+import { executeAutoBuy, checkAndClosePositions } from './simTradeService';
+import { db } from '../db/database';
 import {
   isNewToken, insertToken, updateTokenLatestPrice,
   createTrackingPlans, getPendingSnapshotPlans, executeSnapshot,
   upsertSocialTopics
 } from './tokenService';
-import { BinanceToken } from '../types/token';
+import { BinanceToken, TokenListData } from '../types/token';
 
 // SSE 事件队列
 const sseClients: Set<(data: string) => void> = new Set();
@@ -32,11 +36,29 @@ let pollCount = 0;
 
 export async function pollTokenData(): Promise<void> {
   try {
-    const results = await fetchAllChainTokens(50);
+    // 使用 Meme Rush API 获取新币（rankType: 10）
+    const memeRushResults: TokenListData[] = [];
+    const chains = [
+      { chainId: '56', name: 'bsc' },
+      { chainId: 'CT_501', name: 'solana' },
+      { chainId: '8453', name: 'base' },
+      { chainId: '1', name: 'eth' },
+    ];
+
+    for (const chain of chains) {
+      try {
+        const data = await fetchMemeRushList(chain.chainId, 60);
+        memeRushResults.push(data);
+        console.log(`[API] ${chain.name} (Meme Rush): 获取 ${data.tokens.length} 个新币, total=${data.total}`);
+      } catch (err) {
+        console.error(`[API] ${chain.name} (Meme Rush) 获取失败:`, err instanceof Error ? err.message : err);
+      }
+    }
+
     let newCount = 0;
     let updatedCount = 0;
 
-    for (const chainData of results) {
+    for (const chainData of memeRushResults) {
       for (const token of chainData.tokens) {
         if (isNewToken(token.chainId, token.contractAddress)) {
           const inserted = insertToken(token);
@@ -180,6 +202,48 @@ export function startPolling(): void {
 
   // 发行方数据：每 24 小时自动同步一次
   setInterval(fetchIssuerData, 24 * 60 * 60 * 1000);
+
+  // 扩展数据（审计/动态/Smart Money）：每 60 秒
+  initExtendedTables();
+  setInterval(fetchExtendedData, 60000);
+
+  // AI 分析 + 自动模拟买入：每 30 秒（分析新币后触发买入）
+  initAnalysisTable();
+  setInterval(() => {
+    const results = analyzeNewTokens();
+    if (results.length > 0) {
+      const buyCount = executeAutoBuy(results);
+      if (buyCount > 0) console.log(`[Sim] AI 触发 ${buyCount} 笔自动买入`);
+    }
+  }, 30000);
+
+  // 多 Agent 评分：每 30 秒（对新币运行 5 个 Agent 评分）
+  const { evaluateDecision, storeAgentScores } = require('./agents/decisionAgent');
+  setInterval(() => {
+    try {
+      const newTokens = db.prepare(`
+        SELECT t.chain_id, t.contract_address, t.symbol
+        FROM tokens t
+        LEFT JOIN agent_scores ag ON t.chain_id = ag.chain_id AND t.contract_address = ag.contract_address AND ag.agent_type = 'decision'
+        WHERE ag.id IS NULL AND t.first_seen_at > datetime('now', '-24 hours')
+        ORDER BY t.first_seen_at DESC LIMIT 5
+      `).all() as any[];
+      for (const token of newTokens) {
+        try {
+          const decision = evaluateDecision({ chainId: token.chain_id, contractAddress: token.contract_address, symbol: token.symbol });
+          storeAgentScores(token.chain_id, token.contract_address, decision);
+          console.log(`[Agent] ${token.symbol}: score=${decision.score} rec=${decision.recommendation} confidence=${decision.confidence.toFixed(2)}`);
+        } catch (e) {
+          console.error(`[Agent] 评分失败 ${token.symbol}:`, e);
+        }
+      }
+    } catch (e) {
+      console.error('[Agent] 轮询失败:', e);
+    }
+  }, 30000);
+
+  // 持仓检查（止盈止损）：每 10 秒
+  setInterval(checkAndClosePositions, 10000);
 
   // 立即执行一次
   pollTokenData();
