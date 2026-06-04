@@ -68,8 +68,9 @@ export const portfolioApi = {
 };
 
 export const simApi = {
-  getStats: () => Promise.resolve(null),
-  getHistory: () => Promise.resolve([]),
+  getStats: () => api.get<any, any>('/sim/stats'),
+  getTrades: (params?: { page?: number; pageSize?: number; status?: string }) =>
+    api.get<any, any>('/sim/trades', { params }),
 };
 
 export const ruleApi = {
@@ -82,6 +83,23 @@ export const ruleApi = {
 export const issuerApi = {
   getProfile: (_address: string) => Promise.resolve(null),
   getList: () => Promise.resolve([]),
+};
+
+// ===== 新增 API（合约审计 / 实时动态 / Smart Money） =====
+
+export const auditApi = {
+  get: (chain: string, address: string) =>
+    api.get(`/tokens/${chain}/${address}/audit`).catch(() => null),
+};
+
+export const dynamicApi = {
+  get: (chain: string, address: string) =>
+    api.get(`/tokens/${chain}/${address}/dynamic`).catch(() => null),
+};
+
+export const smartMoneyApi = {
+  getSignals: (params?: { page?: number; pageSize?: number }) =>
+    api.get<any, PaginatedResponse<any>>('/smart-money/signals', { params }).catch(() => ({ data: [], total: 0, page: 1, pageSize: 20 })),
 };
 
 export default api;
