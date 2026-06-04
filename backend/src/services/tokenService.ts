@@ -136,7 +136,7 @@ export function insertToken(token: BinanceToken): boolean {
       token.liquidity,
       safeInt(token.holders),
       token.marketCap,
-      safeInt(token.launchTime),
+      normalizeLaunchTime(token.launchTime),
       JSON.stringify(token.tokenTag || {}),
       JSON.stringify(token.auditInfo || {}),
       JSON.stringify(token.alphaInfo || null),
@@ -195,7 +195,7 @@ export function insertToken(token: BinanceToken): boolean {
 // 捕获首次发现快照（用于后期热门潜质分析）
 function captureFirstSeenSnapshot(token: BinanceToken, firstSeenAt: string): void {
   try {
-    const launchTime = safeInt(token.launchTime);
+    const launchTime = normalizeLaunchTime(token.launchTime);
     const launchAgeMinutes = launchTime ? (Date.now() - launchTime) / 60000 : null;
     const metaInfo = token.metaInfo || {};
 
@@ -225,7 +225,7 @@ function captureFirstSeenSnapshot(token: BinanceToken, firstSeenAt: string): voi
         bundles_holding_first, search_count_24h_first,
         creator_address, issuer_total_tokens, issuer_survival_rate,
         audit_risk_level, audit_is_verified, chain_count
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `) as SqliteStatement;
 
     stmt.run(
@@ -276,7 +276,7 @@ function insertTrendingToken(token: BinanceToken): void {
     token.chainId, token.contractAddress, token.symbol,
     token.price, token.marketCap, token.liquidity,
     safeInt(token.holders), token.volume24h, token.percentChange24h,
-    safeInt(token.launchTime)
+    normalizeLaunchTime(token.launchTime)
   );
 }
 
@@ -594,4 +594,14 @@ function safeInt(val: any): number | null {
   if (val === null || val === undefined) return null;
   const n = parseInt(String(val), 10);
   return isNaN(n) ? null : n;
+}
+
+// 标准化 launch_time 为毫秒格式
+function normalizeLaunchTime(val: any): number | null {
+  if (val === null || val === undefined) return null;
+  const n = parseInt(String(val), 10);
+  if (isNaN(n)) return null;
+  // 如果是秒格式（10位数），转换为毫秒
+  if (n < 10000000000) return n * 1000;
+  return n;
 }
