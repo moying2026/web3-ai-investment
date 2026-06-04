@@ -268,6 +268,40 @@ export function initDatabase(): void {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_sv_rule ON strategy_validations(rule_id)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_sv_token ON strategy_validations(chain_id, contract_address)`);
 
+  // 新币首次发现快照表（用于后期热门潜质分析）
+  db.exec(`CREATE TABLE IF NOT EXISTS token_first_seen (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chain_id TEXT NOT NULL,
+    contract_address TEXT NOT NULL,
+    symbol TEXT,
+    first_seen_at TEXT NOT NULL,
+    launch_time INTEGER,
+    launch_age_minutes REAL,           -- 首次发现时距离上线的分钟数
+    price_first TEXT,                  -- 首次发现时的价格
+    liquidity_first TEXT,              -- 首次发现时的流动性
+    holders_first INTEGER,             -- 首次发现时的持有人数
+    market_cap_first TEXT,             -- 首次发现时的市值
+    volume_1h_first TEXT,              -- 首次发现时的1h成交量
+    volume_24h_first TEXT,             -- 首次发现时的24h成交量
+    unique_trader_1h_first INTEGER,    -- 首次发现时的1h交易者数
+    unique_trader_24h_first INTEGER,   -- 首次发现时的24h交易者数
+    holders_top10_percent_first TEXT,  -- 首次发现时的前10持仓占比
+    smart_money_holding_first REAL,    -- 首次发现时的Smart Money持仓
+    dev_holding_first REAL,            -- 首次发现时的开发者持仓
+    bundles_holding_first TEXT,        -- 首次发现时的捆绑持仓
+    search_count_24h_first INTEGER,    -- 首次发现时的搜索热度
+    creator_address TEXT,              -- 发行方地址
+    issuer_total_tokens INTEGER,       -- 发行方历史代币数
+    issuer_survival_rate REAL,         -- 发行方迁移率
+    audit_risk_level INTEGER,          -- 审计风险等级
+    audit_is_verified INTEGER,         -- 是否已验证
+    chain_count INTEGER DEFAULT 1,     -- 同名代币出现在几条链
+    UNIQUE(chain_id, contract_address)
+  )`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_tfs_token ON token_first_seen(chain_id, contract_address)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_tfs_time ON token_first_seen(first_seen_at)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_tfs_creator ON token_first_seen(creator_address)`);
+
   console.log('[DB] 数据库初始化完成:', DB_PATH);
 }
 

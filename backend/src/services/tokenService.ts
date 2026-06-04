@@ -169,6 +169,9 @@ export function insertToken(token: BinanceToken): boolean {
 
     knownTokens.add(key);
 
+    // 捕获首次发现快照（用于后期热门潜质分析）
+    captureFirstSeenSnapshot(token, now);
+
     // 异步采集链上数据（不阻塞插入流程）
     fetchSingleTokenOnchain(token.chainId, token.contractAddress, token.symbol, token.decimals)
       .catch(err => console.error(`[Onchain] ${token.symbol} 后台采集失败:`, err));
@@ -186,6 +189,77 @@ export function insertToken(token: BinanceToken): boolean {
       return false;
     }
     throw err;
+  }
+}
+
+// 捕获首次发现快照（用于后期热门潜质分析）
+function captureFirstSeenSnapshot(token: BinanceToken, firstSeenAt: string): void {
+  try {
+    const launchTime = safeInt(token.launchTime);
+    const launchAgeMinutes = launchTime ? (Date.now() - launchTime) / 60000 : null;
+    const metaInfo = token.metaInfo || {};
+
+    // 获取发行方信息（如果已有）
+    let issuerTotalTokens = null;
+    let issuerSurvivalRate = null;
+    if (metaInfo.creatorAddress) {
+      const issuer = db.prepare('SELECT total_tokens, survival_rate FROM issuer_profiles WHERE issuer_address = ?').get(metaInfo.creatorAddress) as any;
+      if (issuer) {
+        issuerTotalTokens = issuer.total_tokens;
+        issuerSurvivalRate = issuer.survival_rate;
+      }
+    }
+
+    // 检查同名代币数量
+    const similar = db.prepare(
+      'SELECT COUNT(*) as c FROM tokens WHERE UPPER(symbol) = UPPER(?) AND chain_id != ?'
+    ).get(token.symbol, token.chainId) as any;
+    const chainCount = (similar?.c || 0) + 1;
+
+    const stmt = db.prepare(`
+      INSERT OR IGNORE INTO token_first_seen (
+        chain_id, contract_address, symbol, first_seen_at, launch_time, launch_age_minutes,
+        price_first, liquidity_first, holders_first, market_cap_first,
+        volume_1h_first, volume_24h_first, unique_trader_1h_first, unique_trader_24h_first,
+        holders_top10_percent_first, smart_money_holding_first, dev_holding_first,
+        bundles_holding_first, search_count_24h_first,
+        creator_address, issuer_total_tokens, issuer_survival_rate,
+        audit_risk_level, audit_is_verified, chain_count
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `) as SqliteStatement;
+
+    stmt.run(
+      token.chainId,
+      token.contractAddress,
+      token.symbol,
+      firstSeenAt,
+      launchTime,
+      launchAgeMinutes,
+      token.price,
+      token.liquidity,
+      safeInt(token.holders),
+      token.marketCap,
+      token.volume1h,
+      token.volume24h,
+      safeInt(token.uniqueTrader1h),
+      safeInt(token.uniqueTrader24h),
+      token.holdersTop10Percent,
+      token.smartMoneyHoldingPercent,
+      token.devHoldingPercent,
+      token.bundlesHoldingPercent,
+      safeInt(token.searchCount24h),
+      metaInfo.creatorAddress || null,
+      issuerTotalTokens,
+      issuerSurvivalRate,
+      token.auditInfo?.riskLevel || null,
+      token.auditInfo?.riskLevel === 1 ? 1 : 0,
+      chainCount
+    );
+
+    console.log(`[FirstSeen] ${token.symbol} (${token.chainId}): launch_age=${launchAgeMinutes?.toFixed(1)}min, liq=${token.liquidity}, holders=${token.holders}`);
+  } catch (err) {
+    // 静默失败，不影响主流程
+    console.error(`[FirstSeen] ${token.symbol} 快照捕获失败:`, err);
   }
 }
 
