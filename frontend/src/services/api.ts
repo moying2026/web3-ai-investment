@@ -76,10 +76,9 @@ export const simApi = {
 };
 
 export const ruleApi = {
-  getList: () => Promise.resolve([]),
-  create: (_rule: any) => Promise.resolve({ success: true }),
-  update: (_id: string, _rule: any) => Promise.resolve({ success: true }),
-  delete: (_id: string) => Promise.resolve({ success: true }),
+  getAnalysis: () => api.get<any, any>('/ai/analysis').catch(() => null),
+  getAccuracy: () => api.get<any, any>('/sim/accuracy').catch(() => null),
+  getSimStats: () => api.get<any, any>('/sim/stats').catch(() => null),
 };
 
 export const issuerApi = {
