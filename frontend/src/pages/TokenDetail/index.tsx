@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Row, Col, Card, Tag, Descriptions, Button, Space, Table, Divider, Spin, message, Statistic, Progress } from 'antd';
-import { ShoppingCartOutlined, ArrowLeftOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Row, Col, Card, Tag, Descriptions, Button, Space, Table, Divider, Spin, message, Statistic, Progress, Alert } from 'antd';
+import { ShoppingCartOutlined, ArrowLeftOutlined, ReloadOutlined, WarningOutlined, CheckCircleOutlined, SafetyOutlined } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
 import type { Token, Snapshot } from '../../types';
-import api, { tokenApi, auditApi, dynamicApi } from '../../services/api';
+import api, { tokenApi, auditApi, dynamicApi, tokenAnalyzerApi, issuerRiskApi } from '../../services/api';
 import { formatPrice, formatVolume, formatSupply, formatPercent } from '../../utils/format';
 
 // 生成 mock K线数据
@@ -48,6 +48,10 @@ const TokenDetail: React.FC = () => {
   const [klinePeriod, setKlinePeriod] = useState<string>('1h');
   const [auditData, setAuditData] = useState<any>(null);
   const [dynamicData, setDynamicData] = useState<any>(null);
+  const [similarData, setSimilarData] = useState<any>(null);
+  const [addressRisk, setAddressRisk] = useState<any>(null);
+  const [agentScore, setAgentScore] = useState<any>(null);
+  const [issuerRisk, setIssuerRisk] = useState<any>(null);
 
   useEffect(() => {
     if (!chain || !address) return;
@@ -77,6 +81,21 @@ const TokenDetail: React.FC = () => {
     auditApi.get(chain, address).then(data => setAuditData(data)).catch(() => {});
     dynamicApi.get(chain, address).then(data => setDynamicData(data)).catch(() => {});
   }, [chain, address]);
+
+  // 加载 P0 规则引擎数据
+  useEffect(() => {
+    if (!chain || !address) return;
+    tokenAnalyzerApi.getSimilar(chain, address).then(data => setSimilarData(data)).catch(() => {});
+    tokenAnalyzerApi.getAddressRisk(chain, address).then(data => setAddressRisk(data)).catch(() => {});
+    tokenAnalyzerApi.getAgentScore(chain, address).then(data => setAgentScore(data)).catch(() => {});
+  }, [chain, address]);
+
+  // 加载发行方风险评估
+  useEffect(() => {
+    const creatorAddr = (token as any)?.creator_address;
+    if (!creatorAddr) return;
+    issuerRiskApi.getRisk(creatorAddr).then(data => setIssuerRisk(data)).catch(() => {});
+  }, [(token as any)?.creator_address]);
 
   if (loading) {
     return <Spin size="large" style={{ display: 'block', margin: '100px auto' }} />;
@@ -467,6 +486,234 @@ const TokenDetail: React.FC = () => {
                 ]}
               />
             </>
+          )}
+        </Card>
+      )}
+
+      {/* P0: 多 Agent 综合评分 */}
+      {agentScore && (
+        <Card title="🤖 多 Agent 综合评分" size="small" style={{ marginTop: 16 }}>
+          <Row gutter={16} align="middle">
+            <Col span={6} style={{ textAlign: 'center' }}>
+              <Progress
+                type="circle"
+                percent={agentScore.score || 0}
+                strokeColor={
+                  (agentScore.score || 0) >= 70 ? '#52c41a' :
+                  (agentScore.score || 0) >= 40 ? '#faad14' : '#ff4d4f'
+                }
+                format={(pct) => `${pct}`}
+                size={100}
+              />
+              <div style={{ marginTop: 8, fontSize: 14, fontWeight: 'bold' }}>
+                {agentScore.recommendation === 'BUY' ? <Tag color="green" style={{ fontSize: 14 }}>买入</Tag> :
+                 agentScore.recommendation === 'HOLD' ? <Tag color="blue" style={{ fontSize: 14 }}>持有</Tag> :
+                 agentScore.recommendation === 'WATCH' ? <Tag color="orange" style={{ fontSize: 14 }}>观望</Tag> :
+                 <Tag color="red" style={{ fontSize: 14 }}>回避</Tag>}
+              </div>
+              <div style={{ fontSize: 12, color: '#8c8c8c', marginTop: 4 }}>置信度: {((agentScore.confidence || 0) * 100).toFixed(0)}%</div>
+            </Col>
+            <Col span={18}>
+              {agentScore.details?.scores && (
+                <ReactECharts
+                  option={{
+                    radar: {
+                      indicator: [
+                        { name: '合约安全', max: 20 },
+                        { name: '市场热度', max: 15 },
+                        { name: '发行方信誉', max: 15 },
+                        { name: '链上数据', max: 25 },
+                        { name: '流动性', max: 25 },
+                      ],
+                    },
+                    series: [{
+                      type: 'radar' as const,
+                      data: [{
+                        value: [
+                          agentScore.details.scores.risk || 0,
+                          agentScore.details.scores.market || 0,
+                          agentScore.details.scores.issuer || 0,
+                          agentScore.details.scores.onchain || 0,
+                          agentScore.details.scores.liquidity || 0,
+                        ],
+                        areaStyle: { opacity: 0.2 },
+                        lineStyle: { color: '#1890ff' },
+                        itemStyle: { color: '#1890ff' },
+                      }],
+                    }],
+                  }}
+                  style={{ height: 200 }}
+                />
+              )}
+            </Col>
+          </Row>
+          {/* 风险标记 & 亮点 */}
+          {(agentScore.riskFlags?.length > 0 || agentScore.highlights?.length > 0) && (
+            <>
+              <Divider style={{ margin: '12px 0' }} />
+              <Row gutter={16}>
+                {agentScore.riskFlags?.length > 0 && (
+                  <Col span={12}>
+                    <div style={{ fontWeight: 'bold', marginBottom: 8, color: '#ff4d4f' }}>⚠️ 风险标记</div>
+                    {agentScore.riskFlags.map((f: string, i: number) => (
+                      <div key={i} style={{ fontSize: 12, color: '#ff4d4f', marginBottom: 4 }}>{f}</div>
+                    ))}
+                  </Col>
+                )}
+                {agentScore.highlights?.length > 0 && (
+                  <Col span={12}>
+                    <div style={{ fontWeight: 'bold', marginBottom: 8, color: '#52c41a' }}>✅ 亮点</div>
+                    {agentScore.highlights.map((h: string, i: number) => (
+                      <div key={i} style={{ fontSize: 12, color: '#52c41a', marginBottom: 4 }}>{h}</div>
+                    ))}
+                  </Col>
+                )}
+              </Row>
+            </>
+          )}
+        </Card>
+      )}
+
+      {/* P0: 同名检测 */}
+      {similarData && (
+        <Card title="🔍 同名/跨链检测" size="small" style={{ marginTop: 16 }}>
+          <Row gutter={16} style={{ marginBottom: 12 }}>
+            <Col span={6}>
+              <Statistic title="同名代币数" value={similarData.duplicateCount ?? 0} />
+            </Col>
+            <Col span={6}>
+              <div style={{ color: '#8c8c8c', marginBottom: 8 }}>风险等级</div>
+              <Tag color={similarData.riskLevel === 'high' ? 'red' : similarData.riskLevel === 'medium' ? 'orange' : 'green'}>
+                {similarData.riskLevel === 'high' ? '高风险' : similarData.riskLevel === 'medium' ? '中风险' : '低风险'}
+              </Tag>
+            </Col>
+            <Col span={6}>
+              <div style={{ color: '#8c8c8c', marginBottom: 8 }}>跨链项目</div>
+              {similarData.isCrossChainProject ? (
+                <Tag color="blue" icon={<CheckCircleOutlined />}>是</Tag>
+              ) : (
+                <Tag>否</Tag>
+              )}
+            </Col>
+            <Col span={6}>
+              <div style={{ color: '#8c8c8c', marginBottom: 8 }}>跨链数量</div>
+              <span style={{ fontSize: 18, fontWeight: 'bold' }}>{similarData.crossChain?.length ?? 0} 条链</span>
+            </Col>
+          </Row>
+          {similarData.riskReasons?.length > 0 && (
+            <Alert
+              message={similarData.riskReasons.join('；')}
+              type={similarData.riskLevel === 'high' ? 'error' : similarData.riskLevel === 'medium' ? 'warning' : 'success'}
+              showIcon
+              style={{ marginBottom: 12 }}
+            />
+          )}
+          {similarData.sameName?.length > 0 && (
+            <>
+              <div style={{ fontWeight: 'bold', marginBottom: 8 }}>同名代币列表</div>
+              <Table
+                dataSource={similarData.sameName}
+                rowKey={(r: any) => `${r.chain_id}_${r.contract_address}`}
+                size="small"
+                pagination={false}
+                columns={[
+                  { title: '链', dataIndex: 'chain_id', key: 'chain_id', render: (v: string) => <Tag>{chainMap[v] || v}</Tag> },
+                  { title: '合约地址', dataIndex: 'contract_address', key: 'contract_address', render: (v: string) => <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{v?.slice(0, 10)}...{v?.slice(-6)}</span> },
+                  { title: '首次出现', dataIndex: 'first_seen_at', key: 'first_seen_at', render: (v: string) => v ? new Date(v).toLocaleString() : '-' },
+                ]}
+                onRow={(record: any) => ({
+                  onClick: () => navigate(`/token/${record.chain_id}/${record.contract_address}`),
+                  style: { cursor: 'pointer' },
+                })}
+              />
+            </>
+          )}
+          {similarData.sameName?.length === 0 && (
+            <div style={{ textAlign: 'center', color: '#8c8c8c', padding: 20 }}>无同名代币</div>
+          )}
+        </Card>
+      )}
+
+      {/* P0: 地址风险分析 */}
+      {addressRisk && (
+        <Card title="🏦 地址风险分析" size="small" style={{ marginTop: 16 }}>
+          <Row gutter={16} style={{ marginBottom: 12 }}>
+            <Col span={6}>
+              <div style={{ color: '#8c8c8c', marginBottom: 8 }}>地址安全评分</div>
+              <Progress
+                percent={Math.max(0, Math.min(100, ((addressRisk.score || 0) + 10) * 4))}
+                strokeColor={(addressRisk.score || 0) >= 8 ? '#52c41a' : (addressRisk.score || 0) >= 4 ? '#faad14' : '#ff4d4f'}
+                format={() => `${addressRisk.score ?? 0}`}
+              />
+            </Col>
+            <Col span={6}>
+              <Statistic title="数据点" value={addressRisk.dataPoints ?? 0} suffix="/ 5" />
+            </Col>
+            <Col span={6}>
+              <div style={{ color: '#8c8c8c', marginBottom: 8 }}>风险标记</div>
+              <span style={{ color: '#ff4d4f', fontWeight: 'bold' }}>{addressRisk.riskFlags?.length ?? 0} 个</span>
+            </Col>
+            <Col span={6}>
+              <div style={{ color: '#8c8c8c', marginBottom: 8 }}>亮点</div>
+              <span style={{ color: '#52c41a', fontWeight: 'bold' }}>{addressRisk.highlights?.length ?? 0} 个</span>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            {addressRisk.riskFlags?.length > 0 && (
+              <Col span={12}>
+                <div style={{ fontWeight: 'bold', marginBottom: 8, color: '#ff4d4f' }}>⚠️ 风险标记</div>
+                {addressRisk.riskFlags.map((f: string, i: number) => (
+                  <Tag key={i} color="red" style={{ marginBottom: 4 }}>{f}</Tag>
+                ))}
+              </Col>
+            )}
+            {addressRisk.highlights?.length > 0 && (
+              <Col span={12}>
+                <div style={{ fontWeight: 'bold', marginBottom: 8, color: '#52c41a' }}>✅ 亮点</div>
+                {addressRisk.highlights.map((h: string, i: number) => (
+                  <Tag key={i} color="green" style={{ marginBottom: 4 }}>{h}</Tag>
+                ))}
+              </Col>
+            )}
+          </Row>
+        </Card>
+      )}
+
+      {/* P0: 发行方风险评估 */}
+      {issuerRisk && (
+        <Card title="📊 发行方风险评估" size="small" style={{ marginTop: 16 }}>
+          <Row gutter={16} style={{ marginBottom: 12 }}>
+            <Col span={4}>
+              <div style={{ color: '#8c8c8c', marginBottom: 8 }}>风险等级</div>
+              <Tag color={issuerRisk.riskLevel === 'high' ? 'red' : issuerRisk.riskLevel === 'medium' ? 'orange' : 'green'}
+                icon={issuerRisk.riskLevel === 'high' ? <WarningOutlined /> : <SafetyOutlined />}
+                style={{ fontSize: 14, padding: '4px 8px' }}>
+                {issuerRisk.riskLevel === 'high' ? '高风险' : issuerRisk.riskLevel === 'medium' ? '中风险' : '低风险'}
+              </Tag>
+            </Col>
+            <Col span={4}><Statistic title="总代币数" value={issuerRisk.totalTokens ?? 0} /></Col>
+            <Col span={4}><Statistic title="近7天发行" value={issuerRisk.recentTokens7d ?? 0} valueStyle={{ color: (issuerRisk.recentTokens7d ?? 0) > 3 ? '#ff4d4f' : undefined }} /></Col>
+            <Col span={4}><Statistic title="近30天发行" value={issuerRisk.recentTokens30d ?? 0} /></Col>
+            <Col span={4}>
+              <div style={{ color: '#8c8c8c', marginBottom: 8 }}>迁移率</div>
+              <Progress
+                percent={parseFloat(((issuerRisk.migrationRate ?? 0) * 100).toFixed(1))}
+                strokeColor={(issuerRisk.migrationRate ?? 0) >= 0.5 ? '#52c41a' : (issuerRisk.migrationRate ?? 0) >= 0.2 ? '#faad14' : '#ff4d4f'}
+                format={(pct) => `${pct}%`}
+              />
+            </Col>
+            <Col span={4}>
+              <div style={{ color: '#8c8c8c', marginBottom: 8 }}>置信度</div>
+              <span style={{ fontSize: 18, fontWeight: 'bold' }}>{((issuerRisk.confidence ?? 0) * 100).toFixed(0)}%</span>
+            </Col>
+          </Row>
+          {issuerRisk.riskReasons?.length > 0 && (
+            <Alert
+              message="风险原因"
+              description={issuerRisk.riskReasons.join('；')}
+              type={issuerRisk.riskLevel === 'high' ? 'error' : issuerRisk.riskLevel === 'medium' ? 'warning' : 'info'}
+              showIcon
+            />
           )}
         </Card>
       )}

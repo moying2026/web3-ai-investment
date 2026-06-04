@@ -98,6 +98,22 @@ export const dynamicApi = {
     api.get(`/tokens/${chain}/${address}/dynamic`).catch(() => null),
 };
 
+// ===== P0 规则引擎 API =====
+
+export const tokenAnalyzerApi = {
+  getSimilar: (chain: string, address: string) =>
+    api.get(`/tokens/${chain}/${address}/similar`).catch(() => null),
+  getAddressRisk: (chain: string, address: string) =>
+    api.get(`/tokens/${chain}/${address}/address-risk`).catch(() => null),
+  getAgentScore: (chain: string, address: string) =>
+    api.get(`/agents/score/${chain}/${address}`).catch(() => null),
+};
+
+export const issuerRiskApi = {
+  getRisk: (address: string) =>
+    api.get(`/issuer/${address}/risk`).catch(() => null),
+};
+
 export const smartMoneyApi = {
   getSignals: (params?: { page?: number; pageSize?: number }) =>
     api.get<any, PaginatedResponse<any>>('/smart-money/signals', { params }).catch(() => ({ data: [], total: 0, page: 1, pageSize: 20 })),

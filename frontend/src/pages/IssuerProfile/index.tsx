@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, Table, Tag, Descriptions, Row, Col, Statistic, Progress, Spin, Button, Space, message } from 'antd';
 import { ArrowLeftOutlined, UserOutlined, WarningOutlined } from '@ant-design/icons';
-import api from '../../services/api';
+import api, { issuerRiskApi } from '../../services/api';
 import { formatPrice, formatVolume } from '../../utils/format';
 
 interface IssuerDetail {
@@ -45,6 +45,7 @@ const IssuerProfile: React.FC = () => {
   const [tokensLoading, setTokensLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
+  const [riskData, setRiskData] = useState<any>(null);
 
   useEffect(() => {
     if (!address) return;
@@ -73,6 +74,9 @@ const IssuerProfile: React.FC = () => {
 
   useEffect(() => {
     loadTokens();
+    if (address) {
+      issuerRiskApi.getRisk(address).then(data => setRiskData(data)).catch(() => {});
+    }
   }, [address]);
 
   if (loading) return <Spin size="large" style={{ display: 'block', margin: '100px auto' }} />;
@@ -250,6 +254,57 @@ const IssuerProfile: React.FC = () => {
           })}
         />
       </Card>
+
+      {/* P0: 发行方风险评估 */}
+      {riskData && (
+        <Card title="📊 发行方风险评估" style={{ marginTop: 16 }}>
+          <Row gutter={24} style={{ marginBottom: 16 }}>
+            <Col span={4}>
+              <div style={{ color: '#8c8c8c', marginBottom: 8 }}>风险等级</div>
+              <Tag
+                color={riskData.riskLevel === 'high' ? 'red' : riskData.riskLevel === 'medium' ? 'orange' : 'green'}
+                icon={riskData.riskLevel === 'high' ? <WarningOutlined /> : undefined}
+                style={{ fontSize: 16, padding: '4px 12px' }}
+              >
+                {riskData.riskLevel === 'high' ? '高风险' : riskData.riskLevel === 'medium' ? '中风险' : '低风险'}
+              </Tag>
+            </Col>
+            <Col span={4}>
+              <Statistic title="总代币数" value={riskData.totalTokens ?? 0} />
+            </Col>
+            <Col span={4}>
+              <Statistic
+                title="近7天发行"
+                value={riskData.recentTokens7d ?? 0}
+                valueStyle={{ color: (riskData.recentTokens7d ?? 0) > 3 ? '#ff4d4f' : undefined }}
+              />
+            </Col>
+            <Col span={4}>
+              <Statistic title="近30天发行" value={riskData.recentTokens30d ?? 0} />
+            </Col>
+            <Col span={4}>
+              <div style={{ color: '#8c8c8c', marginBottom: 8 }}>迁移率</div>
+              <Progress
+                percent={parseFloat(((riskData.migrationRate ?? 0) * 100).toFixed(1))}
+                strokeColor={(riskData.migrationRate ?? 0) >= 0.5 ? '#52c41a' : (riskData.migrationRate ?? 0) >= 0.2 ? '#faad14' : '#ff4d4f'}
+                format={(pct) => `${pct}%`}
+              />
+            </Col>
+            <Col span={4}>
+              <div style={{ color: '#8c8c8c', marginBottom: 8 }}>置信度</div>
+              <span style={{ fontSize: 18, fontWeight: 'bold' }}>{((riskData.confidence ?? 0) * 100).toFixed(0)}%</span>
+            </Col>
+          </Row>
+          {riskData.riskReasons?.length > 0 && (
+            <div style={{ background: riskData.riskLevel === 'high' ? '#fff2f0' : riskData.riskLevel === 'medium' ? '#fffbe6' : '#f6ffed', padding: 12, borderRadius: 6 }}>
+              <div style={{ fontWeight: 'bold', marginBottom: 8 }}>风险原因：</div>
+              {riskData.riskReasons.map((r: string, i: number) => (
+                <div key={i} style={{ fontSize: 13, marginBottom: 4 }}>• {r}</div>
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
     </div>
   );
 };
