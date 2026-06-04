@@ -16,7 +16,7 @@ if (PROXY_URL) {
 
 // 请求间隔控制（避免限流）
 let lastRequestTime = 0;
-const MIN_REQUEST_INTERVAL_MS = 200;
+const MIN_REQUEST_INTERVAL_MS = 500; // 增加到 500ms，避免多模块同时请求触发 429
 
 async function throttle(): Promise<void> {
   const now = Date.now();

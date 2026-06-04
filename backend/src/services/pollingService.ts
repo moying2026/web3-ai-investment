@@ -345,16 +345,24 @@ export function startPolling(): void {
     }
   }, 10000);
 
-  // 新币发现流：每 90 秒
-  setInterval(() => {
-    if (!isModuleRunning('discovery')) return;
-    pollLatestTokens();
-  }, 90000);
-
-  // 立即执行一次
-  pollTokenData();
-  pollSocialTopics();
-  pollLatestTokens();
+  // 新币发现流：每 90 秒（错开热门轮询，避免同时请求）
+  setTimeout(() => {
+    setInterval(async () => {
+      if (!isModuleRunning('discovery')) return;
+      try {
+        await pollLatestTokens();
+        recordRun('discovery', true, undefined, { pollCount: discoveryPollCount });
+      } catch (err) {
+        recordRun('discovery', false, String(err));
+      }
+    }, 90000);
+    // 立即执行一次
+    pollLatestTokens().then(() => {
+      recordRun('discovery', true, undefined, { pollCount: discoveryPollCount });
+    }).catch(err => {
+      recordRun('discovery', false, String(err));
+    });
+  }, 15000); // 延迟 15 秒启动，错开其他模块
 }
 
 export function getNewTokenBuffer(): BinanceToken[] {
