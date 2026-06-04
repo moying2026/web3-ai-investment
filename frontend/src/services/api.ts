@@ -58,8 +58,10 @@ export const tradingApi = {
 };
 
 export const aiApi = {
-  getRecommendations: () => Promise.resolve([]),
-  getAnalysis: (_chain: string, _address: string) => Promise.resolve(null),
+  getRecommendations: (params?: { page?: number; pageSize?: number }) =>
+    api.get<any, any>('/analysis', { params }).catch(() => ({ data: [], total: 0, page: 1, pageSize: 20 })),
+  getAnalysis: (_chain: string, _address: string) =>
+    api.get(`/tokens/${_chain}/${_address}/audit`).catch(() => null),
 };
 
 export const portfolioApi = {
