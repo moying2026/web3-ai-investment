@@ -1,4 +1,4 @@
-import { fetchAllChainTokens, fetchMemeRushList, fetchSocialTopics, fetchPriceInfo } from './binanceApi';
+import { fetchAllChainTokens, fetchMemeRushList, fetchLatestTokens, fetchSocialTopics, fetchPriceInfo } from './binanceApi';
 import { fetchOnchainSupplyData } from './onchainService';
 import { fetchIssuerData } from './issuerService';
 import { initExtendedTables, fetchExtendedData } from './binanceExtendedApi';
@@ -101,6 +101,73 @@ export async function pollTokenData(): Promise<void> {
     }
   } catch (err) {
     console.error('[Poll] 代币采集失败:', err);
+  }
+}
+
+// 新币发现流：获取最新上线代币（每 90 秒一次）
+let discoveryPollCount = 0;
+export async function pollLatestTokens(): Promise<void> {
+  try {
+    const chains = [
+      { chainId: '56', name: 'bsc' },
+      { chainId: 'CT_501', name: 'solana' },
+      { chainId: '8453', name: 'base' },
+      { chainId: '1', name: 'eth' },
+    ];
+
+    let totalNew = 0;
+    let totalUpdated = 0;
+
+    for (const chain of chains) {
+      try {
+        // 获取最近24小时内的新币
+        const data = await fetchLatestTokens(chain.chainId, 50, 1440);
+        let chainNew = 0;
+
+        for (const token of data.tokens) {
+          if (isNewToken(token.chainId, token.contractAddress)) {
+            const inserted = insertToken(token);
+            if (inserted) {
+              chainNew++;
+              totalNew++;
+              createTrackingPlans(token.chainId, token.contractAddress);
+              newTokenBuffer.push(token);
+              broadcast('new_token', {
+                type: 'new_token',
+                token: {
+                  chainId: token.chainId,
+                  contractAddress: token.contractAddress,
+                  symbol: token.symbol,
+                  price: token.price,
+                  marketCap: token.marketCap,
+                  liquidity: token.liquidity,
+                  holders: token.holders,
+                  launchTime: token.launchTime,
+                },
+                detectedAt: new Date().toISOString(),
+              });
+            }
+          } else {
+            updateTokenLatestPrice(token);
+            totalUpdated++;
+          }
+        }
+
+        if (chainNew > 0 || discoveryPollCount % 5 === 0) {
+          console.log(`[Discovery] ${chain.name}: 发现 ${chainNew} 个新币, total=${data.total}`);
+        }
+      } catch (err) {
+        console.error(`[Discovery] ${chain.name} 获取失败:`, err instanceof Error ? err.message : err);
+      }
+    }
+
+    discoveryPollCount++;
+
+    if (totalNew > 0 || discoveryPollCount % 10 === 0) {
+      console.log(`[Discovery] #${discoveryPollCount} | 新币: ${totalNew} | 更新: ${totalUpdated}`);
+    }
+  } catch (err) {
+    console.error('[Discovery] 新币发现失败:', err);
   }
 }
 
@@ -245,9 +312,13 @@ export function startPolling(): void {
   // 持仓检查（止盈止损）：每 10 秒
   setInterval(checkAndClosePositions, 10000);
 
+  // 新币发现流：每 90 秒（获取最新上线代币）
+  setInterval(pollLatestTokens, 90000);
+
   // 立即执行一次
   pollTokenData();
   pollSocialTopics();
+  pollLatestTokens();
 }
 
 export function getNewTokenBuffer(): BinanceToken[] {

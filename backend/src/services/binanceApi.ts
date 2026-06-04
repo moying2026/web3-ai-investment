@@ -76,6 +76,101 @@ export async function fetchTokenList(
   return json.data;
 }
 
+// Meme Rush 新币列表（rankType: 10）
+export async function fetchMemeRushList(
+  chainId: string = '56',
+  size: number = 60,
+  options: {
+    launchTimeMin?: number;
+    liquidityMin?: number;
+    volumeMin?: number;
+    countMin?: number;
+    uniqueTraderMin?: number;
+    tagFilter?: number[];
+    sortBy?: number;
+    period?: number;
+  } = {}
+): Promise<TokenListData> {
+  await throttle();
+
+  const url = `${BASE_URL}/bapi/defi/v1/public/wallet-direct/buw/wallet/market/token/pulse/unified/rank/list`;
+  const body = {
+    rankType: 10,
+    period: options.period || 30,
+    chainId,
+    launchTimeMin: options.launchTimeMin || 15,
+    liquidityMin: options.liquidityMin || 5000,
+    volumeMin: options.volumeMin || 10000,
+    countMin: options.countMin || 10,
+    tagFilter: options.tagFilter || [1, 2, 3],
+    sortBy: options.sortBy || 1,
+    size,
+    uniqueTraderMin: options.uniqueTraderMin || 10,
+  };
+
+  const resp = await proxyFetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!resp.ok) {
+    throw new Error(`fetchMemeRushList HTTP ${resp.status}: ${resp.statusText}`);
+  }
+
+  const json = (await resp.json()) as BinanceApiResponse<TokenListData>;
+
+  if (json.code !== '000000' || !json.success) {
+    throw new Error(`fetchMemeRushList API error: ${json.code} - ${json.message}`);
+  }
+
+  return json.data;
+}
+
+// 获取最新上线代币（新币发现流）
+// launchTimeMax: 最大上线时间（分钟），用于获取近期新币
+export async function fetchLatestTokens(
+  chainId: string = '56',
+  size: number = 50,
+  launchTimeMaxMinutes: number = 1440  // 默认24小时
+): Promise<TokenListData> {
+  await throttle();
+
+  const url = `${BASE_URL}/bapi/defi/v1/public/wallet-direct/buw/wallet/market/token/pulse/unified/rank/list`;
+  const body = {
+    rankType: 10,
+    period: 30,
+    chainId,
+    launchTimeMin: 15,       // 至少上线15分钟（过滤刚创建的垃圾币）
+    launchTimeMax: launchTimeMaxMinutes,  // 最大上线时间
+    liquidityMin: 0,         // 不过滤流动性
+    volumeMin: 0,            // 不过滤交易量
+    countMin: 0,             // 不过滤交易次数
+    tagFilter: [1, 2, 3],
+    sortBy: 4,               // 按上线时间排序（最新在前）
+    size,
+    uniqueTraderMin: 0,      // 不过滤交易者数
+  };
+
+  const resp = await proxyFetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!resp.ok) {
+    throw new Error(`fetchLatestTokens HTTP ${resp.status}: ${resp.statusText}`);
+  }
+
+  const json = (await resp.json()) as BinanceApiResponse<TokenListData>;
+
+  if (json.code !== '000000' || !json.success) {
+    throw new Error(`fetchLatestTokens API error: ${json.code} - ${json.message}`);
+  }
+
+  return json.data;
+}
+
 // 获取多链代币列表
 export async function fetchAllChainTokens(size: number = 50): Promise<TokenListData[]> {
   const chains = ['bsc', 'solana', 'base', 'eth'];
