@@ -6,9 +6,9 @@ import AppLayout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import TokenDetail from './pages/TokenDetail';
 import Trading from './pages/Trading';
-import SimStats from './pages/SimStats';
 import Rules from './pages/Rules';
 import IssuerProfile from './pages/IssuerProfile';
+import SmartMoneySignals from './pages/SmartMoney';
 
 const App: React.FC = () => {
   return (
@@ -19,9 +19,9 @@ const App: React.FC = () => {
             <Route index element={<Dashboard />} />
             <Route path="token/:chain/:address" element={<TokenDetail />} />
             <Route path="trading" element={<Trading />} />
-            <Route path="sim" element={<SimStats />} />
             <Route path="rules" element={<Rules />} />
             <Route path="issuer/:address" element={<IssuerProfile />} />
+            <Route path="signals" element={<SmartMoneySignals />} />
           </Route>
         </Routes>
       </BrowserRouter>

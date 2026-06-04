@@ -4,11 +4,11 @@ import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import {
   DashboardOutlined,
   SwapOutlined,
-  ExperimentOutlined,
   ControlOutlined,
   UserOutlined,
   LineChartOutlined,
   WalletOutlined,
+  ThunderboltOutlined,
 } from '@ant-design/icons';
 import { mockPortfolioStats } from '../mock/data';
 
@@ -25,7 +25,6 @@ const AppLayout: React.FC = () => {
     if (path === '/') return '/';
     if (path.startsWith('/token')) return '/token';
     if (path.startsWith('/trading')) return '/trading';
-    if (path.startsWith('/sim')) return '/sim';
     if (path.startsWith('/rules')) return '/rules';
     if (path.startsWith('/issuer')) return '/issuer';
     return '/';
@@ -35,9 +34,9 @@ const AppLayout: React.FC = () => {
     { key: '/', icon: <DashboardOutlined />, label: '实时监控' },
     { key: '/token', icon: <LineChartOutlined />, label: '代币详情' },
     { key: '/trading', icon: <SwapOutlined />, label: '交易' },
-    { key: '/sim', icon: <ExperimentOutlined />, label: '模拟盘' },
     { key: '/rules', icon: <ControlOutlined />, label: '规则引擎' },
     { key: '/issuer', icon: <UserOutlined />, label: '发行方画像' },
+    { key: '/signals', icon: <ThunderboltOutlined />, label: 'Smart Money' },
   ];
 
   const handleMenuClick = ({ key }: { key: string }) => {
