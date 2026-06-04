@@ -562,19 +562,56 @@ router.get('/analysis', (req: Request, res: Response) => {
 
     let where = '1=1';
     const params: any[] = [];
-    if (recommendation) { where += ' AND recommendation = ?'; params.push(recommendation); }
+    if (recommendation) { where += ' AND aa.recommendation = ?'; params.push(recommendation); }
 
-    const total = (db.prepare(`SELECT COUNT(*) as c FROM ai_analysis WHERE ${where}`)).get(...params) as any;
-    const data = (db.prepare(`SELECT * FROM ai_analysis WHERE ${where} ORDER BY analyzed_at DESC LIMIT ? OFFSET ?`)).all(...params, pageSize, offset);
+    const total = (db.prepare(`SELECT COUNT(*) as c FROM ai_analysis aa WHERE ${where}`).get(...params) as any).c;
+    const data = db.prepare(`
+      SELECT aa.*,
+        t.holders, t.liquidity, t.market_cap, t.volume_24h, t.launch_time,
+        t.audit_info, t.holders_top10_percent, t.smart_money_holding_percent,
+        t.dev_holding_percent, t.bundles_holding_percent,
+        ta.risk_level as audit_risk_level, ta.risk_level_enum as audit_risk_level_enum,
+        ta.buy_tax, ta.sell_tax, ta.unusual_buy_tax, ta.unusual_sell_tax,
+        ta.is_verified, ta.risk_items
+      FROM ai_analysis aa
+      LEFT JOIN tokens t ON aa.chain_id = t.chain_id AND aa.contract_address = t.contract_address
+      LEFT JOIN token_audit ta ON aa.chain_id = ta.chain_id AND aa.contract_address = ta.contract_address
+      WHERE ${where}
+      ORDER BY aa.analyzed_at DESC LIMIT ? OFFSET ?
+    `).all(...params, pageSize, offset);
 
     // 解析 JSON 字段
-    const parsed = data.map((a: any) => ({
-      ...a,
-      reasons: safeJsonParse(a.reasons_json),
-      dimensionScores: safeJsonParse(a.dimension_scores_json),
-    }));
+    const parsed = data.map((a: any) => {
+      const auditInfo = safeJsonParse(a.audit_info);
+      return {
+        ...a,
+        reasons: safeJsonParse(a.reasons_json),
+        dimensionScores: safeJsonParse(a.dimension_scores_json),
+        audit_info: auditInfo,
+        riskLevel: a.audit_risk_level_enum || (auditInfo?.riskLevel) || null,
+        holders: a.holders || 0,
+        liquidity: a.liquidity || '0',
+        market_cap: a.market_cap || '0',
+        volume_24h: a.volume_24h || '0',
+        launch_time: a.launch_time || null,
+        holders_top10_percent: a.holders_top10_percent || '0',
+        smart_money_holding_percent: a.smart_money_holding_percent || 0,
+        dev_holding_percent: a.dev_holding_percent || 0,
+        bundles_holding_percent: a.bundles_holding_percent || '0',
+        audit: {
+          riskLevel: a.audit_risk_level || null,
+          riskLevelEnum: a.audit_risk_level_enum || null,
+          buyTax: a.buy_tax || null,
+          sellTax: a.sell_tax || null,
+          unusualBuyTax: a.unusual_buy_tax || 0,
+          unusualSellTax: a.unusual_sell_tax || 0,
+          isVerified: a.is_verified || 0,
+          riskItems: safeJsonParse(a.risk_items),
+        },
+      };
+    });
 
-    res.json({ code: 0, data: { data: parsed, total: total.c, page, pageSize } });
+    res.json({ code: 0, data: { data: parsed, total: total, page, pageSize } });
   } catch (err: any) {
     res.status(500).json({ code: -1, message: err.message });
   }
