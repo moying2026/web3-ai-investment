@@ -10,6 +10,7 @@ import {
   TrophyOutlined,
   PercentageOutlined,
   ClockCircleOutlined,
+  ClearOutlined,
 } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
 import type { Token } from '../../types';
@@ -124,6 +125,17 @@ const Trading: React.FC = () => {
   const [positions, setPositions] = useState<SimTrade[]>([]);
   const [positionsLoading, setPositionsLoading] = useState(true);
 
+  // 持仓表格：分页 / 排序 / 筛选
+  const [posPage, setPosPage] = useState(1);
+  const [posPageSize, setPosPageSize] = useState(20);
+  const [posSortField, setPosSortField] = useState<string>('entry_time');
+  const [posSortOrder, setPosSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [posFilters, setPosFilters] = useState<Record<string, string>>({});
+
+  // 订单薄：当前选中代币的历史交易 + 挂单
+  const [orderBookTrades, setOrderBookTrades] = useState<SimTrade[]>([]);
+  const [orderBookLoading, setOrderBookLoading] = useState(false);
+
   // 历史数据
   const [history, setHistory] = useState<SimTrade[]>([]);
   const [historyTotal, setHistoryTotal] = useState(0);
@@ -193,6 +205,23 @@ const Trading: React.FC = () => {
     finally { setAiLoading(false); }
   }, []);
 
+  // 加载订单薄：当前选中代币的历史交易 + 挂单
+  const loadOrderBook = useCallback(async (trade: SimTrade) => {
+    setOrderBookLoading(true);
+    try {
+      // 获取该代币的所有交易（含历史+挂单）
+      const res = await simApi.getTrades({ page: 1, pageSize: 200 });
+      const data = res as any;
+      const allList: SimTrade[] = data?.data || [];
+      // 过滤出同一代币的交易
+      const filtered = allList.filter(
+        (t) => t.contract_address === trade.contract_address && t.chain_id === trade.chain_id
+      );
+      setOrderBookTrades(filtered.slice(0, 50));
+    } catch { setOrderBookTrades([]); }
+    finally { setOrderBookLoading(false); }
+  }, []);
+
   useEffect(() => {
     loadStats();
     loadPositions();
@@ -200,6 +229,11 @@ const Trading: React.FC = () => {
     loadAllTradesForChart();
     loadAI();
   }, []);
+
+  // 选中持仓变化时加载订单薄
+  useEffect(() => {
+    if (selectedPosition) loadOrderBook(selectedPosition);
+  }, [selectedPosition]);
 
   // Tab 切换刷新
   const handleTabChange = (key: string) => {
@@ -292,6 +326,94 @@ const Trading: React.FC = () => {
     }],
     grid: { left: 60, right: 60, top: 20, bottom: 40 },
   };
+
+  // ===== 持仓表格：筛选+排序+分页 =====
+  const POS_FILTER_OPTIONS = useMemo(() => {
+    const chains = new Set<string>();
+    const sides = new Set<string>();
+    const types = new Set<string>();
+    const symbols = new Set<string>();
+    positions.forEach(p => {
+      if (p.chain_id) chains.add(p.chain_id);
+      if (p.side) sides.add(p.side);
+      if (p.trade_type) types.add(p.trade_type);
+      if (p.symbol) symbols.add(p.symbol);
+    });
+    return { chains, sides, types, symbols };
+  }, [positions]);
+
+  const filteredPositions = useMemo(() => {
+    let list = [...positions];
+    if (posFilters.chain) list = list.filter(p => p.chain_id === posFilters.chain);
+    if (posFilters.side) list = list.filter(p => p.side === posFilters.side);
+    if (posFilters.trade_type) list = list.filter(p => p.trade_type === posFilters.trade_type);
+    if (posFilters.symbol) list = list.filter(p => (p.symbol || '') === posFilters.symbol);
+    // 排序
+    list.sort((a, b) => {
+      let va: any, vb: any;
+      switch (posSortField) {
+        case 'entry_price': va = parseFloat(a.entry_price); vb = parseFloat(b.entry_price); break;
+        case 'entry_amount': va = parseFloat(a.entry_amount || '0'); vb = parseFloat(b.entry_amount || '0'); break;
+        case 'entry_quantity': va = parseFloat(a.entry_quantity || '0'); vb = parseFloat(b.entry_quantity || '0'); break;
+        case 'entry_time': va = new Date(a.entry_time).getTime(); vb = new Date(b.entry_time).getTime(); break;
+        default: va = new Date(a.entry_time).getTime(); vb = new Date(b.entry_time).getTime();
+      }
+      return posSortOrder === 'asc' ? (va - vb) : (vb - va);
+    });
+    return list;
+  }, [positions, posFilters, posSortField, posSortOrder]);
+
+  const paginatedPositions = useMemo(() => {
+    const start = (posPage - 1) * posPageSize;
+    return filteredPositions.slice(start, start + posPageSize);
+  }, [filteredPositions, posPage, posPageSize]);
+
+  // 表格列：持仓（增加排序 + 筛选下拉）
+  const positionColumns = [
+    { title: '代币', key: 'symbol', width: 100, filters: Array.from(POS_FILTER_OPTIONS.symbols).map(s => ({ text: s, value: s })),
+      onFilter: (value: any, record: SimTrade) => (record.symbol || '') === value,
+      render: (_: any, r: SimTrade) => <Tag>{r.symbol || r.contract_address?.slice(0, 8) + '...'}</Tag> },
+    { title: '链', dataIndex: 'chain_id', key: 'chain_id', width: 80,
+      filters: Array.from(POS_FILTER_OPTIONS.chains).map(c => ({ text: chainMap[c] || c, value: c })),
+      onFilter: (value: any, record: SimTrade) => record.chain_id === value,
+      render: (v: string) => chainMap[v] || v },
+    { title: '方向', dataIndex: 'side', key: 'side', width: 70,
+      filters: Array.from(POS_FILTER_OPTIONS.sides).map(s => ({ text: s === 'BUY' ? '买入' : '卖出', value: s })),
+      onFilter: (value: any, record: SimTrade) => record.side === value,
+      render: (v: string) => <Tag color={v === 'BUY' ? 'green' : 'red'}>{v === 'BUY' ? '买入' : '卖出'}</Tag> },
+    { title: '入场价', dataIndex: 'entry_price', key: 'entry_price', width: 110, sorter: true,
+      sortOrder: posSortField === 'entry_price' ? (posSortOrder === 'asc' ? 'ascend' as const : 'descend' as const) : undefined,
+      render: (v: string) => formatPrice(v) },
+    { title: '数量', dataIndex: 'entry_quantity', key: 'entry_quantity', width: 90, sorter: true,
+      sortOrder: posSortField === 'entry_quantity' ? (posSortOrder === 'asc' ? 'ascend' as const : 'descend' as const) : undefined,
+      render: (v: string | null) => v ? parseFloat(v).toLocaleString() : '-' },
+    { title: '金额', dataIndex: 'entry_amount', key: 'entry_amount', width: 100, sorter: true,
+      sortOrder: posSortField === 'entry_amount' ? (posSortOrder === 'asc' ? 'ascend' as const : 'descend' as const) : undefined,
+      render: (v: string | null) => v ? formatNumber(parseFloat(v), { prefix: '$' }) : '-' },
+    { title: '止损', dataIndex: 'stop_loss_price', key: 'stop_loss_price', width: 90, render: (v: string | null) => v ? formatPrice(v) : '-' },
+    { title: '止盈', dataIndex: 'take_profit_price', key: 'take_profit_price', width: 90, render: (v: string | null) => v ? formatPrice(v) : '-' },
+    { title: '模式', dataIndex: 'trade_type', key: 'trade_type', width: 70,
+      filters: Array.from(POS_FILTER_OPTIONS.types).map(t => ({ text: t === 'ai_auto' ? 'AI' : '手动', value: t })),
+      onFilter: (value: any, record: SimTrade) => record.trade_type === value,
+      render: (v: string) => <Tag color={v === 'ai_auto' ? 'blue' : 'default'}>{v === 'ai_auto' ? 'AI' : '手动'}</Tag> },
+    { title: '入场时间', dataIndex: 'entry_time', key: 'entry_time', width: 140, sorter: true,
+      sortOrder: posSortField === 'entry_time' ? (posSortOrder === 'asc' ? 'ascend' as const : 'descend' as const) : undefined,
+      render: (v: string) => new Date(v).toLocaleString() },
+  ];
+
+  // 订单薄表格列
+  const orderBookColumns = [
+    { title: '时间', dataIndex: 'entry_time', key: 'time', width: 130,
+      render: (v: string) => new Date(v).toLocaleString() },
+    { title: '方向', dataIndex: 'side', key: 'side', width: 60,
+      render: (v: string) => <Tag color={v === 'BUY' ? 'green' : 'red'} style={{ fontSize: 11, padding: '0 4px' }}>{v === 'BUY' ? '买' : '卖'}</Tag> },
+    { title: '价格', dataIndex: 'entry_price', key: 'price', width: 100,
+      render: (v: string) => formatPrice(v) },
+    { title: '数量', dataIndex: 'entry_quantity', key: 'qty', width: 80,
+      render: (v: string | null) => v ? parseFloat(v).toLocaleString() : '-' },
+    { title: '状态', dataIndex: 'status', key: 'status', width: 60,
+      render: (v: string) => <Tag color={v === 'OPEN' ? 'blue' : 'default'} style={{ fontSize: 11, padding: '0 4px' }}>{v === 'OPEN' ? '持仓' : '平仓'}</Tag> },
+  ];
 
   // ===== 统计卡片 =====
   const winRateNum = stats ? parseFloat(stats.winRate) : 0;
@@ -459,21 +581,6 @@ const Trading: React.FC = () => {
     </Card>
   );
 
-  // 持仓表格
-  const positionColumns = [
-    { title: '代币', key: 'symbol', width: 120, render: (_: any, r: SimTrade) => <Tag>{r.symbol || r.contract_address?.slice(0, 8) + '...'}</Tag> },
-    { title: '链', dataIndex: 'chain_id', key: 'chain_id', width: 80, render: (v: string) => chainMap[v] || v },
-    { title: '方向', dataIndex: 'side', key: 'side', width: 70, render: (v: string) => <Tag color={v === 'BUY' ? 'green' : 'red'}>{v === 'BUY' ? '买入' : '卖出'}</Tag> },
-    { title: '入场价', dataIndex: 'entry_price', key: 'entry_price', width: 120, render: (v: string) => formatPrice(v) },
-    { title: '数量', dataIndex: 'entry_quantity', key: 'entry_quantity', width: 100, render: (v: string | null) => v ? parseFloat(v).toLocaleString() : '-' },
-    { title: '金额', dataIndex: 'entry_amount', key: 'entry_amount', width: 100, render: (v: string | null) => v ? formatNumber(parseFloat(v), { prefix: '$' }) : '-' },
-    { title: '止损', dataIndex: 'stop_loss_price', key: 'stop_loss_price', width: 100, render: (v: string | null) => v ? formatPrice(v) : '-' },
-    { title: '止盈', dataIndex: 'take_profit_price', key: 'take_profit_price', width: 100, render: (v: string | null) => v ? formatPrice(v) : '-' },
-    { title: '触发原因', dataIndex: 'trigger_reason', key: 'trigger_reason', width: 120, ellipsis: true, render: (v: string | null) => v || '-' },
-    { title: '模式', dataIndex: 'trade_type', key: 'trade_type', width: 80, render: (v: string) => <Tag color={v === 'ai_auto' ? 'blue' : 'default'}>{v === 'ai_auto' ? 'AI' : '手动'}</Tag> },
-    { title: '入场时间', dataIndex: 'entry_time', key: 'entry_time', width: 140, render: (v: string) => new Date(v).toLocaleString() },
-  ];
-
   // 历史表格
   const historyColumns = [
     { title: '时间', dataIndex: 'exit_time', key: 'exit_time', width: 140, render: (v: string | null) => v ? new Date(v).toLocaleString() : '-' },
@@ -506,14 +613,140 @@ const Trading: React.FC = () => {
       key: 'positions',
       label: <><WalletOutlined /> 当前持仓</>,
       children: (
-        <Table
-          dataSource={positions} columns={positionColumns} rowKey="trade_id" size="small"
-          loading={positionsLoading} scroll={{ x: 1100 }} pagination={false} locale={{ emptyText: '暂无持仓' }}
-          onRow={(record) => ({
-            onClick: () => setSelectedPosition(record),
-            style: { cursor: 'pointer', background: selectedPosition?.trade_id === record.trade_id ? '#e6f7ff' : undefined },
-          })}
-        />
+        <>
+          {/* 筛选区域 */}
+          <div style={{ marginBottom: 12, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <span style={{ color: '#8c8c8c', fontSize: 12 }}>筛选：</span>
+            <Select
+              allowClear placeholder="链" style={{ width: 100 }} size="small"
+              value={posFilters.chain || undefined}
+              onChange={(v) => { setPosFilters(f => ({ ...f, chain: v || '' })); setPosPage(1); }}
+            >
+              {Array.from(POS_FILTER_OPTIONS.chains).map(c => <Select.Option key={c} value={c}>{chainMap[c] || c}</Select.Option>)}
+            </Select>
+            <Select
+              allowClear placeholder="方向" style={{ width: 90 }} size="small"
+              value={posFilters.side || undefined}
+              onChange={(v) => { setPosFilters(f => ({ ...f, side: v || '' })); setPosPage(1); }}
+            >
+              <Select.Option value="BUY">买入</Select.Option>
+              <Select.Option value="SELL">卖出</Select.Option>
+            </Select>
+            <Select
+              allowClear placeholder="模式" style={{ width: 90 }} size="small"
+              value={posFilters.trade_type || undefined}
+              onChange={(v) => { setPosFilters(f => ({ ...f, trade_type: v || '' })); setPosPage(1); }}
+            >
+              <Select.Option value="ai_auto">AI</Select.Option>
+              <Select.Option value="manual">手动</Select.Option>
+            </Select>
+            <Select
+              allowClear placeholder="代币" style={{ width: 120 }} size="small" showSearch
+              value={posFilters.symbol || undefined}
+              onChange={(v) => { setPosFilters(f => ({ ...f, symbol: v || '' })); setPosPage(1); }}
+            >
+              {Array.from(POS_FILTER_OPTIONS.symbols).map(s => <Select.Option key={s} value={s}>{s}</Select.Option>)}
+            </Select>
+            <Button size="small" icon={<ClearOutlined />} onClick={() => { setPosFilters({}); setPosPage(1); }}>
+              重置
+            </Button>
+            <span style={{ marginLeft: 'auto', color: '#8c8c8c', fontSize: 12 }}>
+              共 {filteredPositions.length} 条持仓
+            </span>
+          </div>
+
+          {/* 主体：左侧订单薄 + 右侧持仓表格 */}
+          <Row gutter={16}>
+            {/* 左侧：订单薄 */}
+            <Col span={8}>
+              <Card
+                title={
+                  <Space>
+                    📋 订单薄
+                    {selectedPosition && (
+                      <Tag color="blue" style={{ fontSize: 11 }}>
+                        {selectedPosition.symbol || selectedPosition.contract_address?.slice(0, 8)}
+                      </Tag>
+                    )}
+                  </Space>
+                }
+                size="small"
+                bodyStyle={{ padding: 0 }}
+              >
+                <Spin spinning={orderBookLoading}>
+                  <Table
+                    dataSource={orderBookTrades}
+                    columns={orderBookColumns}
+                    rowKey="trade_id"
+                    size="small"
+                    pagination={false}
+                    scroll={{ y: 380 }}
+                    locale={{ emptyText: '选择持仓查看订单薄' }}
+                    style={{ fontSize: 12 }}
+                  />
+                </Spin>
+              </Card>
+            </Col>
+
+            {/* 右侧：当前持仓表格 */}
+            <Col span={16}>
+              <Card size="small">
+                <Table
+                  dataSource={paginatedPositions}
+                  columns={positionColumns}
+                  rowKey="trade_id"
+                  size="small"
+                  loading={positionsLoading}
+                  scroll={{ x: 1000, y: 460 }}
+                  pagination={false}
+                  locale={{ emptyText: '暂无持仓' }}
+                  onChange={(_pg, _flt, sorter: any) => {
+                    if (sorter.field) {
+                      setPosSortField(sorter.field);
+                      setPosSortOrder(sorter.order === 'ascend' ? 'asc' : 'desc');
+                    }
+                  }}
+                  onRow={(record) => ({
+                    onClick: () => setSelectedPosition(record),
+                    style: { cursor: 'pointer', background: selectedPosition?.trade_id === record.trade_id ? '#e6f7ff' : undefined },
+                  })}
+                />
+                {/* 分页 */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, padding: '0 8px' }}>
+                  <Space size={8}>
+                    {[10, 20, 50, 100].map(size => (
+                      <Button
+                        key={size} size="small"
+                        type={posPageSize === size ? 'primary' : 'default'}
+                        onClick={() => { setPosPageSize(size); setPosPage(1); }}
+                      >
+                        {size}条/页
+                      </Button>
+                    ))}
+                  </Space>
+                  <Space size={8}>
+                    <Button
+                      size="small" disabled={posPage <= 1}
+                      onClick={() => setPosPage(p => p - 1)}
+                    >
+                      上一页
+                    </Button>
+                    <span style={{ fontSize: 12, color: '#595959' }}>
+                      {posPage} / {Math.max(1, Math.ceil(filteredPositions.length / posPageSize))}
+                    </span>
+                    <Button
+                      size="small"
+                      disabled={posPage >= Math.ceil(filteredPositions.length / posPageSize)}
+                      onClick={() => setPosPage(p => p + 1)}
+                    >
+                      下一页
+                    </Button>
+                  </Space>
+                </div>
+              </Card>
+            </Col>
+          </Row>
+        </>
       ),
     },
     { key: 'ai', label: <><RobotOutlined /> AI 推荐</>, children: renderAIRecommendations() },
