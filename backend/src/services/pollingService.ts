@@ -3,7 +3,7 @@ import { fetchOnchainSupplyData } from './onchainService';
 import { fetchIssuerData } from './issuerService';
 import { initExtendedTables, fetchExtendedData } from './binanceExtendedApi';
 import { initAnalysisTable, analyzeNewTokens } from './aiAnalysisService';
-import { executeAutoBuy, checkAndClosePositions } from './simTradeService';
+import { executeAutoBuy, executeAutoBuyAll, checkAndClosePositions } from './simTradeService';
 import { db } from '../db/database';
 import { registerModule, isModuleRunning, recordRun, initSystemControl } from './systemControl';
 import {
@@ -295,17 +295,16 @@ export function startPolling(): void {
     fetchExtendedData();
   }, 10000);
 
-  // AI 分析 + 自动模拟买入：每 30 秒
+  // AI 分析 + 全量自动模拟买入：每 30 秒
   initAnalysisTable();
   setInterval(() => {
     if (!isModuleRunning('ai')) return;
     try {
       const results = analyzeNewTokens();
-      if (results.length > 0) {
-        const buyCount = executeAutoBuy(results);
-        if (buyCount > 0) console.log(`[Sim] AI 触发 ${buyCount} 笔自动买入`);
-      }
-      recordRun('ai', true, undefined, { analyzed: results.length });
+      // 全量买入：所有新币都买，不依赖 AI 评分
+      const buyCount = executeAutoBuyAll();
+      if (buyCount > 0) console.log(`[Sim] 全量买入 ${buyCount} 笔`);
+      recordRun('ai', true, undefined, { analyzed: results.length, bought: buyCount });
     } catch (err) {
       recordRun('ai', false, String(err));
     }

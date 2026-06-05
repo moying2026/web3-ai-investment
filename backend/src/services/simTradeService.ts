@@ -320,6 +320,94 @@ export function executeAutoBuy(analysisResults: AnalysisResult[]): number {
   return buyCount;
 }
 
+// ==================== 全量买入：所有新币都买（不依赖 AI 评估） ====================
+
+export function executeAutoBuyAll(): number {
+  ensureSimTables();
+  let buyCount = 0;
+
+  // 获取所有新币（未持有）
+  const allTokens = (db.prepare(`
+    SELECT t.chain_id, t.contract_address, t.symbol, t.price_latest
+    FROM tokens t
+    WHERE t.price_latest IS NOT NULL AND CAST(t.price_latest AS REAL) > 0
+  `) as SqliteStatement).all() as any[];
+
+  // 获取 AI 分析结果（用于分级金额）
+  const aiMap = new Map<string, any>();
+  try {
+    const aiRows = (db.prepare('SELECT chain_id, contract_address, score, recommendation FROM ai_analysis') as SqliteStatement).all() as any[];
+    for (const row of aiRows) {
+      aiMap.set(`${row.chain_id}:${row.contract_address}`, row);
+    }
+  } catch (e) { /* ai_analysis 表可能不存在 */ }
+
+  for (const token of allTokens) {
+    // 检查是否已有同一代币的 OPEN BUY 记录
+    const existing = (db.prepare(`
+      SELECT id FROM sim_trades
+      WHERE chain_id = ? AND contract_address = ? AND side = 'BUY' AND status = 'OPEN'
+    `) as SqliteStatement).get(token.chain_id, token.contract_address) as any;
+    if (existing) continue;
+
+    const entryPrice = parseFloat(token.price_latest);
+    if (entryPrice <= 0) continue;
+
+    // 有 AI 评估则按建议分级，否则默认 AVOID ($10)
+    const aiResult = aiMap.get(`${token.chain_id}:${token.contract_address}`);
+    const recommendation = aiResult ? aiResult.recommendation : 'AVOID';
+    const score = aiResult ? aiResult.score : 0;
+    const buyAmount = BUY_AMOUNT_MAP[recommendation] || 10;
+    const paymentToken = getPaymentToken(token.chain_id);
+
+    // 预算检查
+    const budgetCheck = checkBudget(buyAmount, token.chain_id);
+    if (!budgetCheck.ok) {
+      console.log(`[Sim] SKIP ${token.symbol}: ${budgetCheck.reason}`);
+      continue;
+    }
+
+    const tradeType = 'auto_all';
+    const strategy = aiResult ? `ai_${recommendation.toLowerCase()}` : 'no_ai';
+    const triggerReason = aiResult
+      ? `AI评分${score}分(${recommendation}): 全量买入`
+      : `无AI评估: 全量买入(默认AVOID)`;
+
+    const tradeId = uuidv4();
+    const entryQuantity = (buyAmount / entryPrice).toString();
+    const stopLossPrice = (entryPrice * (1 + DEFAULT_STOP_LOSS / 100)).toString();
+    const takeProfitPrice = (entryPrice * (1 + DEFAULT_TAKE_PROFIT / 100)).toString();
+    const now = new Date().toISOString();
+
+    // 插入 BUY 记录
+    (db.prepare(`INSERT INTO sim_trades (
+      trade_id, trade_type, strategy, chain_id, contract_address, symbol,
+      side, order_type, payment_token, payment_amount, entry_price, entry_amount, entry_quantity,
+      stop_loss_price, stop_loss_percent, take_profit_price, take_profit_percent,
+      trigger_reason, trigger_scores, status, entry_time
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'MARKET', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?)`)).run(
+      tradeId, tradeType, strategy, token.chain_id, token.contract_address, token.symbol,
+      'BUY', paymentToken, buyAmount.toString(), entryPrice.toString(), buyAmount.toString(), entryQuantity,
+      stopLossPrice, DEFAULT_STOP_LOSS, takeProfitPrice, DEFAULT_TAKE_PROFIT,
+      triggerReason, aiResult ? JSON.stringify(aiResult.dimensionScores || {}) : '{}', now
+    );
+
+    // 创建挂单（止损 + 止盈）
+    createPendingSellOrders(tradeId, token.chain_id, token.contract_address, token.symbol, entryQuantity, entryPrice);
+
+    // 扣减预算
+    deductBudget(buyAmount);
+
+    // 更新组合统计
+    (db.prepare(`UPDATE portfolio_state SET total_trades = total_trades + 1, position_count = position_count + 1, last_trade_at = datetime('now') WHERE portfolio_id = 'main'`)).run();
+
+    buyCount++;
+    console.log(`[Sim] BUY(all): ${token.symbol} @ $${entryPrice.toFixed(8)} | ${buyAmount} ${paymentToken} | ${aiResult ? `AI:${score}分(${recommendation})` : '无AI评估'}`);
+  }
+
+  return buyCount;
+}
+
 // ==================== 挂单创建 ====================
 
 function createPendingSellOrders(
