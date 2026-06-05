@@ -295,21 +295,193 @@ Body: { strategyId: number }
 
 ### 11.3 数据 API（公开，无需登录）
 
-| 端点 | 方法 | 说明 |
-|:--|:--|:--|
-| /bapi/defi/v1/public/wallet-direct/security/token/audit | POST | 代币安全审计 |
-| /bapi/defi/v1/public/wallet-direct/buw/wallet/web/signal/smart-money/ai | POST | 聪明钱信号 |
-| /bapi/defi/v1/public/wallet-direct/buw/wallet/market/token/pulse/social/hype/rank/leaderboard/ai | GET | 社交热度排行 |
-| /bapi/defi/v1/public/wallet-direct/buw/wallet/market/token/pulse/unified/rank/list/ai | POST | 统一代币排行 |
-| /bapi/defi/v1/public/wallet-direct/tracker/wallet/token/inflow/rank/query/ai | POST | 聪明钱净流入 |
-| /bapi/defi/v1/public/wallet-direct/buw/wallet/market/token/pulse/exclusive/rank/list/ai | GET | Meme 排行 |
-| /bapi/defi/v5/public/wallet-direct/buw/wallet/market/token/search/ai | GET | 代币搜索 |
-| /bapi/defi/v1/public/wallet-direct/buw/wallet/dex/market/token/meta/info/ai | GET | 代币元数据 |
-| /bapi/defi/v4/public/wallet-direct/buw/wallet/market/token/dynamic/info/ai | GET | 代币实时动态 |
-| /bapi/defi/v3/public/wallet-direct/buw/wallet/address/pnl/active-position-list/ai | GET | 钱包持仓 |
-| /bapi/defi/v1/public/wallet-direct/buw/wallet/market/token/pulse/rank/list/ai | POST | 发射台 |
-| /bapi/defi/v2/public/wallet-direct/buw/wallet/market/token/social-rush/rank/list/ai | GET | AI 热门话题 |
-| /bapi/defi/v1/public/wallet-direct/buw/wallet/market/token/rwa/stock/detail/list/ai | POST | 代币化美股 |
+#### 代币安全审计
+```
+POST /bapi/defi/v1/public/wallet-direct/security/token/audit
+```
+请求 Body：
+```json
+{
+  "binanceChainId": "56",       // 56(BSC) / CT_501(Solana) / 8453(Base) / 1(ETH)
+  "contractAddress": "0x...",   // 代币合约地址
+  "requestId": "uuid"           // 请求唯一 ID
+}
+```
+返回（已验证）：
+```json
+{
+  "code": "000000",
+  "data": {
+    "riskLevel": 0,              // 0=安全, 1=低风险, 2=中风险, 3=高风险
+    "extraInfo": {
+      "buyTax": "0.0",
+      "sellTax": "0.0",
+      "isVerified": true,
+      "isFlaggedByVendor": false
+    },
+    "riskItems": [
+      {
+        "id": "CONTRACT_RISK",
+        "name": "Contract Risk",
+        "details": [
+          { "title": "Blacklist Restrictions Not Found", "isHit": false, "riskType": "CAUTION" },
+          { "title": "Trading Suspension Function Not Found", "isHit": false, "riskType": "CAUTION" }
+        ]
+      },
+      { "id": "TRADING_RISK", "name": "Trading Risk", "details": [...] },
+      { "id": "SCAM_RISK", "name": "Scam Detection", "details": [...] }
+    ]
+  }
+}
+```
+
+#### 聪明钱信号
+```
+POST /bapi/defi/v1/public/wallet-direct/buw/wallet/web/signal/smart-money/ai
+```
+请求 Body：
+```json
+{
+  "chainId": "56",              // 56(BSC) / CT_501(Solana)
+  "page": 1,
+  "pageSize": 50,               // 最大 100
+  "smartSignalType": ""         // 可选，空=全部
+}
+```
+返回（已验证）：
+```json
+{
+  "code": "000000",
+  "data": [
+    {
+      "signalId": 33863,
+      "ticker": "代币名",
+      "chainId": "56",
+      "contractAddress": "0x...",
+      "direction": "buy",        // buy/sell
+      "smartMoneyCount": 14,      // 聪明钱地址数
+      "alertPrice": "0.000154",   // 触发价格
+      "currentPrice": "0.000076", // 当前价格
+      "highestPrice": "0.000268", // 最高价
+      "maxGain": "1.1566",        // 最大涨幅%
+      "exitRate": 91,             // 退出率%
+      "status": "valid",          // valid/timeout/completed
+      "signalTriggerTime": 1780666115000,
+      "tokenTag": {
+        "Launch Platform": [{ "tagName": "Fourmeme" }],
+        "Sensitive Events": [{ "tagName": "Smart Money Add Holdings" }]
+      }
+    }
+  ]
+}
+```
+
+#### 代币实时动态
+```
+GET /bapi/defi/v4/public/wallet-direct/buw/wallet/market/token/dynamic/info/ai
+```
+查询参数：`chainId=56&contractAddress=0x...`
+返回（已验证，v4 版本）：
+```json
+{
+  "code": "000000",
+  "data": {
+    "price": "0.9993",
+    "volume24h": "412849323.02",
+    "volume24hBuy": "208818590.39",
+    "volume24hSell": "204030732.62",
+    "count24h": "480131",
+    "count24hBuy": "203899",
+    "count24hSell": "276232",
+    "volume1h": "36133983.27",
+    "volume4h": "85061024.01",
+    "volume5m": "3499128.99"
+  }
+}
+```
+
+#### 代币搜索
+```
+GET /bapi/defi/v5/public/wallet-direct/buw/wallet/market/token/search/ai
+```
+查询参数：`keyword=BNB&chainId=56`
+返回（已验证）：
+```json
+{
+  "code": "000000",
+  "data": [
+    {
+      "chainId": "56",
+      "contractAddress": "0x...",
+      "name": "BNB Attestation",
+      "symbol": "BAS",
+      "price": "0.0292",
+      "percentChange24h": "10.84",
+      "volume24h": "6372310.75",
+      "marketCap": "73169808.88",
+      "liquidity": "2064642.25",
+      "holders": "170209",
+      "riskLevel": 1,
+      "tagsInfo": { "Alpha": [...], "DEX Paid": [...] },
+      "links": [{ "label": "website", "link": "https://..." }]
+    }
+  ]
+}
+```
+
+#### 社交热度排行
+```
+GET /bapi/defi/v1/public/wallet-direct/buw/wallet/market/token/pulse/social/hype/rank/leaderboard/ai
+```
+查询参数：`chainId=56&targetLanguage=en&timeRange=1`
+
+#### 统一代币排行
+```
+POST /bapi/defi/v1/public/wallet-direct/buw/wallet/market/token/pulse/unified/rank/list/ai
+```
+请求 Body：`{ "rankType": 10, "chainId": "56", "period": 50, "sortBy": 70, "orderAsc": false, "page": 1, "size": 20 }`
+
+#### 聪明钱净流入排行
+```
+POST /bapi/defi/v1/public/wallet-direct/tracker/wallet/token/inflow/rank/query/ai
+```
+请求 Body：`{ "chainId": "56", "period": "24h" }`
+
+#### Meme 排行
+```
+GET /bapi/defi/v1/public/wallet-direct/buw/wallet/market/token/pulse/exclusive/rank/list/ai
+```
+查询参数：`chainId=56`
+
+#### 代币元数据
+```
+GET /bapi/defi/v1/public/wallet-direct/buw/wallet/dex/market/token/meta/info/ai
+```
+查询参数：`chainId=56&contractAddress=0x...`
+
+#### 钱包持仓查询
+```
+GET /bapi/defi/v3/public/wallet-direct/buw/wallet/address/pnl/active-position-list/ai
+```
+查询参数：`address=0x...&chainId=56&offset=0`
+
+#### 发射台（Pump.fun/Four.meme）
+```
+POST /bapi/defi/v1/public/wallet-direct/buw/wallet/market/token/pulse/rank/list/ai
+```
+请求 Body：`{ "chainId": "CT_501", "rankType": 10, "limit": 20 }`
+
+#### AI 热门话题
+```
+GET /bapi/defi/v2/public/wallet-direct/buw/wallet/market/token/social-rush/rank/list/ai
+```
+查询参数：`chainId=56&rankType=10&sort=10&asc=false`
+
+#### 代币化美股
+```
+POST /bapi/defi/v1/public/wallet-direct/buw/wallet/market/token/rwa/stock/detail/list/ai
+```
+请求 Body：`{ "chainId": "56" }`
 
 ### 11.4 预测市场 API（需登录）
 
