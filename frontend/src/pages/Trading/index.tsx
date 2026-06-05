@@ -655,42 +655,11 @@ const Trading: React.FC = () => {
             </span>
           </div>
 
-          {/* 主体：左侧订单薄 + 右侧持仓表格 */}
-          <Row gutter={16}>
-            {/* 左侧：订单薄 */}
-            <Col span={8}>
-              <Card
-                title={
-                  <Space>
-                    📋 订单薄
-                    {selectedPosition && (
-                      <Tag color="blue" style={{ fontSize: 11 }}>
-                        {selectedPosition.symbol || selectedPosition.contract_address?.slice(0, 8)}
-                      </Tag>
-                    )}
-                  </Space>
-                }
-                size="small"
-                bodyStyle={{ padding: 0 }}
-              >
-                <Spin spinning={orderBookLoading}>
-                  <Table
-                    dataSource={orderBookTrades}
-                    columns={orderBookColumns}
-                    rowKey="trade_id"
-                    size="small"
-                    pagination={false}
-                    scroll={{ y: 380 }}
-                    locale={{ emptyText: '选择持仓查看订单薄' }}
-                    style={{ fontSize: 12 }}
-                  />
-                </Spin>
-              </Card>
-            </Col>
-
-            {/* 右侧：当前持仓表格 */}
-            <Col span={16}>
-              <Card size="small">
+          {/* 主体：左侧持仓表格 + 右侧订单薄 */}
+          <div style={{ display: 'flex', gap: 16, alignItems: 'stretch' }}>
+            {/* 左侧：当前持仓表格 */}
+            <div style={{ flex: 2, minWidth: 0 }}>
+              <Card size="small" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
                 <Table
                   dataSource={paginatedPositions}
                   columns={positionColumns}
@@ -744,8 +713,40 @@ const Trading: React.FC = () => {
                   </Space>
                 </div>
               </Card>
-            </Col>
-          </Row>
+            </div>
+
+            {/* 右侧：订单薄 */}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <Card
+                title={
+                  <Space>
+                    📋 订单薄
+                    {selectedPosition && (
+                      <Tag color="blue" style={{ fontSize: 11 }}>
+                        {selectedPosition.symbol || selectedPosition.contract_address?.slice(0, 8)}
+                      </Tag>
+                    )}
+                  </Space>
+                }
+                size="small"
+                bodyStyle={{ padding: 0 }}
+                style={{ height: '100%', display: 'flex', flexDirection: 'column' }}
+              >
+                <Spin spinning={orderBookLoading}>
+                  <Table
+                    dataSource={orderBookTrades}
+                    columns={orderBookColumns}
+                    rowKey="trade_id"
+                    size="small"
+                    pagination={false}
+                    scroll={{ y: 460 }}
+                    locale={{ emptyText: '选择持仓查看订单薄' }}
+                    style={{ fontSize: 12, flex: 1 }}
+                  />
+                </Spin>
+              </Card>
+            </div>
+          </div>
         </>
       ),
     },

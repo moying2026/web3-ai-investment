@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 
 # 配置
 HAS_API = "http://127.0.0.1:9223"
-TAB_ID = "tab-1780555850988-3"  # 链上数据 Tab（战壕页面）
+TAB_ID = "tab-1780653694439-3"  # 战壕页面 Tab（Binance Meme Rush）
 DB_PATH = "/home/wwtopenclaw/openclaw/workspace/projects/项目_Web3投资决策系统/backend/data/web3_tokens.db"
 POLL_INTERVAL = 5  # 秒（浏览器通道不触发限流）
 STATE_FILE = "/tmp/trench_seen_tokens.json"
