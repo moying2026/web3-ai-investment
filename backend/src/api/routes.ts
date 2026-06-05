@@ -5,6 +5,7 @@ import {
   getSocialTopics, getStats
 } from '../services/tokenService';
 import { addSSEClient, getNewTokenBuffer, getLastPollTime } from '../services/pollingService';
+import { ensureSimTables, closePosition, getPendingOrders, getTradesBySide } from '../services/simTradeService';
 
 const router = Router();
 
@@ -302,9 +303,10 @@ export default router;
 
 // ============ 模拟盘 API ============
 
-// POST /api/sim/trades — 创建模拟交易
+// POST /api/sim/trades — 创建模拟交易（支持 BUY 和 SELL 独立记录）
 router.post('/sim/trades', (req: Request, res: Response) => {
   try {
+    ensureSimTables();
     const { v4: uuidv4 } = require('uuid');
     const { chain_id, contract_address, symbol, side, entry_price, entry_amount, stop_loss_percent, take_profit_percent, trade_type, strategy, trigger_reason } = req.body;
     if (!chain_id || !contract_address || !side || !entry_price) {
@@ -370,37 +372,51 @@ router.get('/sim/portfolio', (_req: Request, res: Response) => {
   }
 });
 
-// PUT /api/sim/trades/:id/close — 平仓
+// PUT /api/sim/trades/:id/close — 平仓（创建独立 SELL 记录）
 router.put('/sim/trades/:id/close', (req: Request, res: Response) => {
   try {
+    ensureSimTables();
     const tradeId = String(req.params.id);
     const { exit_price, exit_reason } = req.body;
     if (!exit_price) { res.status(400).json({ code: -1, message: '缺少 exit_price' }); return; }
 
-    const trade = (db.prepare('SELECT * FROM sim_trades WHERE trade_id = ? AND status = ?')).get(tradeId, 'OPEN') as any;
-    if (!trade) { res.status(404).json({ code: -1, message: '交易未找到或已关闭' }); return; }
+    const trade = (db.prepare('SELECT * FROM sim_trades WHERE trade_id = ? AND side = ? AND status = ?')).get(tradeId, 'BUY', 'OPEN') as any;
+    if (!trade) { res.status(404).json({ code: -1, message: 'BUY 记录未找到或已关闭' }); return; }
 
-    const entryPrice = parseFloat(trade.entry_price);
-    const exitPrice = parseFloat(exit_price);
-    const pnl = trade.side === 'BUY' ? (exitPrice - entryPrice) : (entryPrice - exitPrice);
-    const pnlPercent = (pnl / entryPrice) * 100;
-    const holdingMinutes = Math.floor((Date.now() - new Date(trade.entry_time).getTime()) / 60000);
-    const exitAmount = trade.entry_quantity ? (parseFloat(trade.entry_quantity) * exitPrice).toString() : null;
-    const now = new Date().toISOString();
-
-    (db.prepare(`UPDATE sim_trades SET status = 'CLOSED', exit_price = ?, exit_amount = ?, exit_reason = ?,
-      exit_time = ?, pnl = ?, pnl_percent = ?, holding_duration_minutes = ?, updated_at = datetime('now')
-      WHERE trade_id = ?`)).run(exitPrice.toString(), exitAmount, exit_reason || 'manual', now, pnl.toFixed(6), pnlPercent, holdingMinutes, tradeId);
-
-    // 更新组合统计
-    const isWin = pnl > 0;
-    (db.prepare(`UPDATE portfolio_state SET
-      winning_trades = winning_trades + ?, losing_trades = losing_trades + ?,
-      total_pnl = CAST(total_pnl AS REAL) + ?, position_count = MAX(0, position_count - 1),
-      updated_at = datetime('now') WHERE portfolio_id = 'main'`)).run(isWin ? 1 : 0, isWin ? 0 : 1, pnl);
+    // 使用 simTradeService 创建独立 SELL 记录
+    closePosition(trade, parseFloat(exit_price), exit_reason || 'manual');
 
     const updated = (db.prepare('SELECT * FROM sim_trades WHERE trade_id = ?')).get(tradeId);
-    res.json({ code: 0, data: updated });
+    const sellRecord = (db.prepare('SELECT * FROM sim_trades WHERE parent_trade_id = ? AND side = ? ORDER BY entry_time DESC LIMIT 1').get(tradeId, 'SELL')) as any;
+    res.json({ code: 0, data: { buy: updated, sell: sellRecord } });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/sim/pending-orders — 查询挂单
+router.get('/sim/pending-orders', (req: Request, res: Response) => {
+  try {
+    ensureSimTables();
+    const status = qs(req.query.status) || 'PENDING';
+    const orders = getPendingOrders(status);
+    res.json({ code: 0, data: orders });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/sim/trades/by-side — 按方向查询交易记录
+router.get('/sim/trades/by-side', (req: Request, res: Response) => {
+  try {
+    ensureSimTables();
+    const side = (qs(req.query.side) || 'BUY').toUpperCase();
+    if (side !== 'BUY' && side !== 'SELL') {
+      res.status(400).json({ code: -1, message: 'side must be BUY or SELL' }); return;
+    }
+    const limit = parseInt(qs(req.query.limit) || '50') || 50;
+    const trades = getTradesBySide(side, limit);
+    res.json({ code: 0, data: { side, trades } });
   } catch (err: any) {
     res.status(500).json({ code: -1, message: err.message });
   }
