@@ -368,13 +368,13 @@ router.put('/sim/trades/:id/close', (req: Request, res: Response) => {
   try {
     ensureSimTables();
     const tradeId = String(req.params.id);
-    const { exit_price, exit_reason } = req.body;
-    if (!exit_price) { res.status(400).json({ code: -1, message: '缺少 exit_price' }); return; }
+    const { price, reason } = req.body;
+    if (!price) { res.status(400).json({ code: -1, message: '缺少 price' }); return; }
 
-    const trade = (db.prepare('SELECT * FROM sim_trades WHERE trade_id = ? AND side = ? AND status = ?')).get(tradeId, 'BUY', 'FILLED') as any;
+    const trade = (db.prepare('SELECT * FROM sim_trades WHERE trade_id = ? AND side = ? AND status = ?')).get(tradeId, 'BUY', 'SUCCESS') as any;
     if (!trade) { res.status(404).json({ code: -1, message: 'BUY 记录未找到或已关闭' }); return; }
 
-    closePosition(trade, parseFloat(exit_price), exit_reason || 'manual');
+    closePosition(trade, parseFloat(price), reason || 'manual');
 
     const updated = (db.prepare('SELECT * FROM sim_trades WHERE trade_id = ?')).get(tradeId);
     const sellRecord = (db.prepare('SELECT * FROM sim_trades WHERE parent_trade_id = ? AND side = ? ORDER BY created_at DESC LIMIT 1').get(tradeId, 'SELL')) as any;
