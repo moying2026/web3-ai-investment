@@ -19,6 +19,22 @@ const BUY_AMOUNT_MAP: Record<string, number> = {
 const DEFAULT_STOP_LOSS = -20;   // 止损 -20%
 const DEFAULT_TAKE_PROFIT = 50;  // 止盈 +50%
 
+// 链 → 支付代币映射（贴近实盘）
+const CHAIN_PAYMENT_TOKEN: Record<string, string> = {
+  'bsc': 'BNB',
+  '56': 'BNB',
+  'solana': 'SOL',
+  'CT_501': 'SOL',
+  'base': 'ETH',
+  '8453': 'ETH',
+  'eth': 'ETH',
+  '1': 'ETH',
+};
+
+function getPaymentToken(chainId: string): string {
+  return CHAIN_PAYMENT_TOKEN[chainId] || 'USDT';
+}
+
 // ==================== 初始化表 ====================
 
 export function ensureSimTables(): void {
@@ -34,6 +50,8 @@ export function ensureSimTables(): void {
       symbol TEXT,
       side TEXT NOT NULL,                  -- 'BUY' 或 'SELL'，独立记录
       order_type TEXT DEFAULT 'MARKET',
+      payment_token TEXT DEFAULT 'USDT',   -- 支付代币（BNB/SOL/ETH/USDT）
+      payment_amount TEXT,                 -- 支付金额（以 payment_token 计价）
       entry_price TEXT NOT NULL,
       entry_amount TEXT,
       entry_quantity TEXT,
@@ -121,6 +139,7 @@ export function executeAutoBuy(analysisResults: AnalysisResult[]): number {
     if (entryPrice <= 0) continue;
 
     const buyAmount = BUY_AMOUNT_MAP[result.recommendation] || 10;
+    const paymentToken = getPaymentToken(result.chainId);
     const tradeType = 'ai_auto';
     const strategy = `ai_${result.recommendation.toLowerCase()}`;
     const triggerReason = `AI评分${result.score}分(${result.recommendation}): ${result.reasons.slice(0, 3).join('; ')}`;
@@ -134,12 +153,12 @@ export function executeAutoBuy(analysisResults: AnalysisResult[]): number {
     // 插入 BUY 记录
     (db.prepare(`INSERT INTO sim_trades (
       trade_id, trade_type, strategy, chain_id, contract_address, symbol,
-      side, order_type, entry_price, entry_amount, entry_quantity,
+      side, order_type, payment_token, payment_amount, entry_price, entry_amount, entry_quantity,
       stop_loss_price, stop_loss_percent, take_profit_price, take_profit_percent,
       trigger_reason, trigger_scores, status, entry_time
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'MARKET', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?)`)).run(
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'MARKET', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?)`)).run(
       tradeId, tradeType, strategy, result.chainId, result.contractAddress, result.symbol,
-      'BUY', entryPrice.toString(), buyAmount.toString(), entryQuantity,
+      'BUY', paymentToken, buyAmount.toString(), entryPrice.toString(), buyAmount.toString(), entryQuantity,
       stopLossPrice, DEFAULT_STOP_LOSS, takeProfitPrice, DEFAULT_TAKE_PROFIT,
       triggerReason, JSON.stringify(result.dimensionScores), now
     );
@@ -151,7 +170,7 @@ export function executeAutoBuy(analysisResults: AnalysisResult[]): number {
     (db.prepare("UPDATE portfolio_state SET total_trades = total_trades + 1, last_trade_at = datetime('now') WHERE portfolio_id = 'main'")).run();
 
     buyCount++;
-    console.log(`[Sim] BUY: ${result.symbol} @ $${entryPrice.toFixed(8)} | $${buyAmount} | AI: ${result.score}分(${result.recommendation})`);
+    console.log(`[Sim] BUY: ${result.symbol} @ $${entryPrice.toFixed(8)} | ${buyAmount} ${paymentToken} | AI: ${result.score}分(${result.recommendation})`);
   }
 
   return buyCount;

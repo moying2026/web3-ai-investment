@@ -308,7 +308,7 @@ router.post('/sim/trades', (req: Request, res: Response) => {
   try {
     ensureSimTables();
     const { v4: uuidv4 } = require('uuid');
-    const { chain_id, contract_address, symbol, side, entry_price, entry_amount, stop_loss_percent, take_profit_percent, trade_type, strategy, trigger_reason } = req.body;
+    const { chain_id, contract_address, symbol, side, entry_price, entry_amount, stop_loss_percent, take_profit_percent, trade_type, strategy, trigger_reason, payment_token } = req.body;
     if (!chain_id || !contract_address || !side || !entry_price) {
       res.status(400).json({ code: -1, message: '缺少必填字段: chain_id, contract_address, side, entry_price' });
       return;
@@ -318,15 +318,17 @@ router.post('/sim/trades', (req: Request, res: Response) => {
     const stop_loss_price = stop_loss_percent ? (parseFloat(entry_price) * (1 - stop_loss_percent / 100)).toString() : null;
     const take_profit_price = take_profit_percent ? (parseFloat(entry_price) * (1 + take_profit_percent / 100)).toString() : null;
     const now = new Date().toISOString();
+    const CHAIN_MAP: Record<string, string> = { 'bsc': 'BNB', '56': 'BNB', 'solana': 'SOL', 'CT_501': 'SOL', 'base': 'ETH', '8453': 'ETH', 'eth': 'ETH', '1': 'ETH' };
+    const resolvedPaymentToken = payment_token || CHAIN_MAP[chain_id] || 'USDT';
 
     (db.prepare(`INSERT INTO sim_trades (
       trade_id, trade_type, strategy, chain_id, contract_address, symbol,
-      side, order_type, entry_price, entry_amount, entry_quantity,
+      side, order_type, payment_token, payment_amount, entry_price, entry_amount, entry_quantity,
       stop_loss_price, stop_loss_percent, take_profit_price, take_profit_percent,
       trigger_reason, status, entry_time
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'MARKET', ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?)`)).run(
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'MARKET', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?)`)).run(
       trade_id, trade_type || 'manual', strategy || null, chain_id, contract_address, symbol || null,
-      side, entry_price, entry_amount || null, entry_quantity,
+      side, resolvedPaymentToken, entry_amount || null, entry_price, entry_amount || null, entry_quantity,
       stop_loss_price, stop_loss_percent || null, take_profit_price, take_profit_percent || null,
       trigger_reason || null, now
     );
