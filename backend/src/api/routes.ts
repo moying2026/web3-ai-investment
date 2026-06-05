@@ -5,7 +5,7 @@ import {
   getSocialTopics, getStats
 } from '../services/tokenService';
 import { addSSEClient, getNewTokenBuffer, getLastPollTime } from '../services/pollingService';
-import { ensureSimTables, closePosition, getPendingOrders, getTradesBySide } from '../services/simTradeService';
+import { ensureSimTables, closePosition, getPendingOrders, getTradesBySide, getPortfolioInfo, updateBudget } from '../services/simTradeService';
 
 const router = Router();
 
@@ -363,12 +363,24 @@ router.get('/sim/trades', (req: Request, res: Response) => {
   }
 });
 
-// GET /api/sim/portfolio — 查询组合状态
+// GET /api/sim/portfolio — 查询组合状态（含预算信息）
 router.get('/sim/portfolio', (_req: Request, res: Response) => {
   try {
-    const portfolio = (db.prepare("SELECT * FROM portfolio_state WHERE portfolio_id = 'main'")).get();
-    const openTrades = (db.prepare("SELECT COUNT(*) as c FROM sim_trades WHERE status = 'OPEN'")).get() as any;
-    res.json({ code: 0, data: { ...portfolio, open_positions: openTrades.c } });
+    ensureSimTables();
+    const info = getPortfolioInfo();
+    res.json({ code: 0, data: info });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// PUT /api/sim/portfolio — 修改预算配置
+router.put('/sim/portfolio', (req: Request, res: Response) => {
+  try {
+    ensureSimTables();
+    const { total_budget, max_per_trade_pct, max_positions, max_chain_pct } = req.body;
+    const result = updateBudget({ total_budget, max_per_trade_pct, max_positions, max_chain_pct });
+    res.json({ code: 0, data: result });
   } catch (err: any) {
     res.status(500).json({ code: -1, message: err.message });
   }

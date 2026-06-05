@@ -98,6 +98,12 @@ export function ensureSimTables(): void {
     CREATE TABLE IF NOT EXISTS portfolio_state (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       portfolio_id TEXT NOT NULL UNIQUE DEFAULT 'main',
+      total_budget REAL DEFAULT 1000,      -- 总预算
+      used_budget REAL DEFAULT 0,           -- 已用预算
+      available_budget REAL DEFAULT 1000,   -- 可用预算
+      max_per_trade_pct REAL DEFAULT 10,    -- 单笔最大投入占比(%)
+      max_positions INTEGER DEFAULT 20,     -- 同时持仓上限
+      max_chain_pct REAL DEFAULT 40,        -- 单链最大投入占比(%)
       total_trades INTEGER DEFAULT 0,
       winning_trades INTEGER DEFAULT 0,
       losing_trades INTEGER DEFAULT 0,
@@ -114,6 +120,134 @@ export function ensureSimTables(): void {
   if (!main) {
     db.prepare("INSERT INTO portfolio_state (portfolio_id) VALUES ('main')").run();
   }
+}
+
+// ==================== 预算控制 ====================
+
+function getPortfolio(): any {
+  return (db.prepare("SELECT * FROM portfolio_state WHERE portfolio_id = 'main'") as SqliteStatement).get();
+}
+
+function checkBudget(amount: number, chainId: string): { ok: boolean; reason?: string } {
+  const p = getPortfolio();
+  if (!p) return { ok: false, reason: 'portfolio_not_found' };
+
+  // 检查可用预算
+  if (amount > p.available_budget) {
+    return { ok: false, reason: `insufficient_budget: need $${amount}, available $${p.available_budget}` };
+  }
+
+  // 检查单笔最大投入
+  const maxPerTrade = p.total_budget * (p.max_per_trade_pct / 100);
+  if (amount > maxPerTrade) {
+    return { ok: false, reason: `exceeds_max_per_trade: $${amount} > $${maxPerTrade} (${p.max_per_trade_pct}%)` };
+  }
+
+  // 检查持仓数量上限
+  const openCount = (db.prepare("SELECT COUNT(*) as c FROM sim_trades WHERE side = 'BUY' AND status = 'OPEN'") as SqliteStatement).get() as any;
+  if (openCount && openCount.c >= p.max_positions) {
+    return { ok: false, reason: `max_positions_reached: ${openCount.c}/${p.max_positions}` };
+  }
+
+  // 检查单链投入比例
+  const chainInvested = (db.prepare(
+    "SELECT COALESCE(SUM(CAST(entry_amount AS REAL)), 0) as s FROM sim_trades WHERE side = 'BUY' AND status = 'OPEN' AND chain_id = ?"
+  ) as SqliteStatement).get(chainId) as any;
+  const chainMax = p.total_budget * (p.max_chain_pct / 100);
+  if (chainInvested && (chainInvested.s + amount) > chainMax) {
+    return { ok: false, reason: `chain_limit_exceeded: ${chainId} invested $${chainInvested.s}, limit $${chainMax} (${p.max_chain_pct}%)` };
+  }
+
+  return { ok: true };
+}
+
+function deductBudget(amount: number): void {
+  db.prepare("UPDATE portfolio_state SET used_budget = used_budget + ?, available_budget = available_budget - ?, updated_at = datetime('now') WHERE portfolio_id = 'main'").run(amount, amount);
+}
+
+function releaseBudget(amount: number): void {
+  db.prepare("UPDATE portfolio_state SET used_budget = MAX(0, used_budget - ?), available_budget = available_budget + ?, updated_at = datetime('now') WHERE portfolio_id = 'main'").run(amount, amount);
+}
+
+export function getPortfolioInfo(): any {
+  ensureSimTables();
+  const p = getPortfolio();
+  if (!p) return null;
+
+  const openTrades = (db.prepare(
+    "SELECT COUNT(*) as c FROM sim_trades WHERE side = 'BUY' AND status = 'OPEN'"
+  ) as SqliteStatement).get() as any;
+
+  // 计算持仓市值
+  const openPositions = (db.prepare(`
+    SELECT st.chain_id, st.contract_address, st.entry_amount, t.price_latest
+    FROM sim_trades st
+    LEFT JOIN tokens t ON st.chain_id = t.chain_id AND st.contract_address = t.contract_address
+    WHERE st.side = 'BUY' AND st.status = 'OPEN'
+  `) as SqliteStatement).all() as any[];
+
+  let totalMarketValue = 0;
+  for (const pos of openPositions) {
+    const entryAmt = parseFloat(pos.entry_amount || '0');
+    const latestPrice = parseFloat(pos.price_latest || '0');
+    // 简单估算：如果有最新价，用最新价；否则用买入价
+    totalMarketValue += entryAmt; // 保守估算
+  }
+
+  return {
+    portfolio_id: p.portfolio_id,
+    total_budget: p.total_budget,
+    used_budget: p.used_budget,
+    available_budget: p.available_budget,
+    max_per_trade_pct: p.max_per_trade_pct,
+    max_positions: p.max_positions,
+    max_chain_pct: p.max_chain_pct,
+    open_positions: openTrades?.c || 0,
+    total_market_value: totalMarketValue,
+    total_trades: p.total_trades,
+    winning_trades: p.winning_trades,
+    losing_trades: p.losing_trades,
+    total_pnl: p.total_pnl,
+    last_trade_at: p.last_trade_at,
+  };
+}
+
+export function updateBudget(config: { total_budget?: number; max_per_trade_pct?: number; max_positions?: number; max_chain_pct?: number }): any {
+  ensureSimTables();
+  const p = getPortfolio();
+  if (!p) return null;
+
+  const updates: string[] = [];
+  const params: any[] = [];
+
+  if (config.total_budget !== undefined) {
+    const diff = config.total_budget - p.total_budget;
+    updates.push('total_budget = ?');
+    params.push(config.total_budget);
+    updates.push('available_budget = available_budget + ?');
+    params.push(diff);
+  }
+  if (config.max_per_trade_pct !== undefined) {
+    updates.push('max_per_trade_pct = ?');
+    params.push(config.max_per_trade_pct);
+  }
+  if (config.max_positions !== undefined) {
+    updates.push('max_positions = ?');
+    params.push(config.max_positions);
+  }
+  if (config.max_chain_pct !== undefined) {
+    updates.push('max_chain_pct = ?');
+    params.push(config.max_chain_pct);
+  }
+
+  if (updates.length === 0) return getPortfolioInfo();
+
+  updates.push("updated_at = datetime('now')");
+  params.push('main');
+  db.prepare(`UPDATE portfolio_state SET ${updates.join(', ')} WHERE portfolio_id = ?`).run(...params);
+
+  console.log(`[Sim] 预算更新:`, config);
+  return getPortfolioInfo();
 }
 
 // ==================== BUY：独立买入记录 ====================
@@ -140,6 +274,14 @@ export function executeAutoBuy(analysisResults: AnalysisResult[]): number {
 
     const buyAmount = BUY_AMOUNT_MAP[result.recommendation] || 10;
     const paymentToken = getPaymentToken(result.chainId);
+
+    // 预算检查
+    const budgetCheck = checkBudget(buyAmount, result.chainId);
+    if (!budgetCheck.ok) {
+      console.log(`[Sim] SKIP ${result.symbol}: ${budgetCheck.reason}`);
+      continue;
+    }
+
     const tradeType = 'ai_auto';
     const strategy = `ai_${result.recommendation.toLowerCase()}`;
     const triggerReason = `AI评分${result.score}分(${result.recommendation}): ${result.reasons.slice(0, 3).join('; ')}`;
@@ -166,8 +308,11 @@ export function executeAutoBuy(analysisResults: AnalysisResult[]): number {
     // 创建独立的挂单（止损 + 止盈）
     createPendingSellOrders(tradeId, result.chainId, result.contractAddress, result.symbol, entryQuantity, entryPrice);
 
+    // 扣减预算
+    deductBudget(buyAmount);
+
     // 更新组合统计
-    (db.prepare("UPDATE portfolio_state SET total_trades = total_trades + 1, last_trade_at = datetime('now') WHERE portfolio_id = 'main'")).run();
+    (db.prepare(`UPDATE portfolio_state SET total_trades = total_trades + 1, position_count = position_count + 1, last_trade_at = datetime('now') WHERE portfolio_id = 'main'`)).run();
 
     buyCount++;
     console.log(`[Sim] BUY: ${result.symbol} @ $${entryPrice.toFixed(8)} | ${buyAmount} ${paymentToken} | AI: ${result.score}分(${result.recommendation})`);
@@ -295,6 +440,10 @@ function executePendingOrder(order: any, currentPrice: number): void {
       currentPrice.toString(), sellAmount.toString(), order.order_type,
       now, pnl.toFixed(6), pnlPercent, holdingMinutes, order.parent_trade_id
     );
+
+    // 释放预算
+    const entryAmount = parseFloat(buyTrade.entry_amount || '0');
+    if (entryAmount > 0) releaseBudget(entryAmount);
   }
 
   // 更新组合统计
@@ -346,6 +495,10 @@ export function closePosition(trade: any, exitPrice: number, exitReason: string)
   // 取消关联挂单
   (db.prepare(`UPDATE sim_pending_orders SET status = 'CANCELED'
     WHERE parent_trade_id = ? AND status = 'PENDING'`)).run(trade.trade_id);
+
+  // 释放预算
+  const entryAmount = parseFloat(trade.entry_amount || '0');
+  if (entryAmount > 0) releaseBudget(entryAmount);
 
   // 更新组合统计
   const isWin = pnl > 0;
