@@ -299,12 +299,12 @@ Body: { strategyId: number }
 ```
 POST /bapi/defi/v1/public/wallet-direct/security/token/audit
 ```
-请求 Body：
+请求 Body（3 个必填参数）：
 ```json
 {
-  "binanceChainId": "56",       // 56(BSC) / CT_501(Solana) / 8453(Base) / 1(ETH)
-  "contractAddress": "0x...",   // 代币合约地址
-  "requestId": "uuid"           // 请求唯一 ID
+  "binanceChainId": "56",       // 必填。56(BSC) / CT_501(Solana) / 8453(Base) / 1(ETH)
+  "contractAddress": "0x...",   // 必填。代币合约地址
+  "requestId": "550e8400-..."   // 必填。UUID v4 格式
 }
 ```
 返回（已验证）：
@@ -445,7 +445,14 @@ POST /bapi/defi/v1/public/wallet-direct/buw/wallet/market/token/pulse/unified/ra
 ```
 POST /bapi/defi/v1/public/wallet-direct/tracker/wallet/token/inflow/rank/query/ai
 ```
-请求 Body：`{ "chainId": "56", "period": "24h" }`
+请求 Body（必填参数）：
+```json
+{
+  "chainId": "56",              // 必填。56(BSC) / CT_501(Solana) / 8453(Base)
+  "tagType": 2,                 // 必填。默认 2
+  "period": "24h"               // 必填。如 "24h" / "7d"
+}
+```
 
 #### Meme 排行
 ```
