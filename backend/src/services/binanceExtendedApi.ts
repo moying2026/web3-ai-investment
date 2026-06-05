@@ -10,7 +10,7 @@ if (PROXY_URL) {
   dispatcher = new ProxyAgent(PROXY_URL);
 }
 
-const BASE_URL = 'https://www.binance.com';
+const BASE_URL = 'https://web3.binance.com';
 
 interface SqliteStatement {
   run(...params: any[]): { changes: number };
@@ -87,7 +87,7 @@ interface TokenDynamicInfo {
 export async function fetchTokenDynamicInfo(chainId: string, contractAddress: string): Promise<TokenDynamicInfo | null> {
   await throttle();
   try {
-    const resp = await undiciFetch(`${BASE_URL}/bapi/defi/v4/public/wallet-direct/buw/wallet/market/token/dynamic/info?chainId=${chainId}&contractAddress=${contractAddress}`, {
+    const resp = await undiciFetch(`${BASE_URL}/bapi/defi/v4/public/wallet-direct/buw/wallet/market/token/dynamic/info/ai?chainId=${chainId}&contractAddress=${contractAddress}`, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
       dispatcher,
@@ -129,7 +129,7 @@ interface SmartMoneySignal {
 export async function fetchSmartMoneySignals(chainId: string = '56', pageSize: number = 20): Promise<SmartMoneySignal[]> {
   await throttle();
   try {
-    const resp = await undiciFetch(`${BASE_URL}/bapi/defi/v1/public/wallet-direct/buw/wallet/web/signal/smart-money`, {
+    const resp = await undiciFetch(`${BASE_URL}/bapi/defi/v1/public/wallet-direct/buw/wallet/web/signal/smart-money/ai`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chainId, page: 1, pageSize }),
@@ -166,7 +166,7 @@ interface SocialHypeItem {
 export async function fetchSocialHypeRank(chainId: string = '56'): Promise<SocialHypeItem[]> {
   await throttle();
   try {
-    const resp = await undiciFetch(`${BASE_URL}/bapi/defi/v1/public/wallet-direct/buw/wallet/market/token/pulse/social/hype/rank/leaderboard?chainId=${chainId}&sentiment=all&timeRange=24h`, {
+    const resp = await undiciFetch(`${BASE_URL}/bapi/defi/v1/public/wallet-direct/buw/wallet/market/token/pulse/social/hype/rank/leaderboard/ai?chainId=${chainId}&sentiment=all&timeRange=24h`, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
       dispatcher,
@@ -198,7 +198,7 @@ interface CreatorPnlData {
 export async function fetchCreatorPnl(address: string, chainId: string = '56'): Promise<CreatorPnlData | null> {
   await throttle();
   try {
-    const resp = await undiciFetch(`${BASE_URL}/bapi/defi/v3/public/wallet-direct/buw/wallet/address/pnl/active-position-list?address=${address}&chainId=${chainId}`, {
+    const resp = await undiciFetch(`${BASE_URL}/bapi/defi/v3/public/wallet-direct/buw/wallet/address/pnl/active-position-list/ai?address=${address}&chainId=${chainId}`, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
       dispatcher,

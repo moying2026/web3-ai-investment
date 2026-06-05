@@ -209,7 +209,7 @@ export async function fetchSocialTopics(
     topicType,
   });
 
-  const url = `${BASE_URL}/bapi/defi/v2/public/wallet-direct/buw/wallet/market/token/social-rush/rank/list?${params}`;
+  const url = `${BASE_URL}/bapi/defi/v2/public/wallet-direct/buw/wallet/market/token/social-rush/rank/list/ai?${params}`;
 
   const resp = await proxyFetch(url);
 
@@ -231,7 +231,7 @@ export async function fetchPriceInfo(chainId: string, contractAddress: string): 
   await throttle();
 
   const params = new URLSearchParams({ chainId, contractAddress });
-  const url = `${BASE_URL}/bapi/defi/v1/public/wallet-direct/buw/wallet/token/price/info?${params}`;
+  const url = `${BASE_URL}/bapi/defi/v1/public/wallet-direct/buw/wallet/market/token/dynamic/info/ai?${params}`;
 
   const resp = await proxyFetch(url);
 
