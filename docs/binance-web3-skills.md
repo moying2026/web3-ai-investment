@@ -196,7 +196,154 @@ sim_trades 表的 `exchange_order_id` 字段存储这些 ID。
 
 ---
 
-## 十、相关文档
+## 十一、底层 API 端点明细（直接调用，不经过 CLI）
+
+> 以下 API 端点从 baw CLI 源码（@binance/agentic-wallet@1.1.1）提取。
+> 基础 URL：`https://web3.binance.com`
+> 所有 API 均为 REST，可直接用 Node.js fetch/axios 调用。
+> 数据 API 无需认证，交易 API 需要 `agentSessionId` cookie。
+
+### 11.1 交易 API（核心，需登录）
+
+#### 市价 Swap 报价
+```
+POST /bapi/defi/v1/public/wallet-direct/web-dex/agent/quote
+```
+| 参数 | 类型 | 必填 | 说明 |
+|:--|:--|:--|:--|
+| binanceChainId | string | 是 | 56(BSC) / CT_501(Solana) / 8453(Base) / 1(ETH) |
+| fromToken | string | 是 | 源代币合约地址 |
+| toToken | string | 是 | 目标代币合约地址 |
+| amount | string | 是 | 输入数量（人类可读格式） |
+| slippage | string | 否 | 滑点："auto" 或 "0.01"-"1" |
+
+返回：`{ code, data: { quoteId, fromCoinSymbol, fromCoinAmount, toCoinSymbol, toCoinAmount, slippage, feeDetail, gasDetails } }`
+
+#### 市价 Swap 下单
+```
+POST /bapi/defi/v1/public/wallet-direct/web-dex/agent/place-order
+```
+| 参数 | 类型 | 必填 | 说明 |
+|:--|:--|:--|:--|
+| binanceChainId | string | 是 | 链 ID |
+| fromToken | string | 是 | 源代币合约地址 |
+| toToken | string | 是 | 目标代币合约地址 |
+| amount | string | 是 | 输入数量 |
+| slippage | string | 否 | 滑点（默认 auto） |
+| mev | boolean | 否 | MEV 保护（默认 true） |
+| gasLevel | string | 否 | LOW/MEDIUM/HIGH（默认 HIGH） |
+
+返回：`{ code, data: { orderId, clientOrderId } }`
+⚠️ orderId ≠ 链上成交，需轮询 `batch-query-market-orders` 确认状态。
+
+#### 限价单下单
+```
+POST /bapi/defi/v1/public/wallet-direct/web-dex/agent/place-limit-order
+```
+| 参数 | 类型 | 必填 | 说明 |
+|:--|:--|:--|:--|
+| binanceChainId | string | 是 | 链 ID |
+| fromToken | string | 是 | 源代币合约地址 |
+| toToken | string | 是 | 目标代币合约地址（USDT/USDC/BNB） |
+| amount | string | 是 | 输入数量 |
+| triggerPrice | string | 是 | 触发价格（USD） |
+| side | string | 是 | buy/sell |
+| slippage | string | 否 | 滑点 |
+| mev | boolean | 否 | MEV 保护 |
+| gasLevel | string | 否 | Gas 等级 |
+
+返回：`{ code, data: { strategyId, clientStrategyId } }`
+限价单提交到链上，到价自动成交，不需要我们轮询！
+
+#### 查询市价单
+```
+POST /bapi/defi/v1/public/wallet-direct/web-dex/agent/batch-query-market-orders
+```
+返回：`{ data: { total, rows: [{ orderId, fromTokenName, fromTokenQty, toTokenName, toTokenActualQty, status, orderTxId, bookTime }] } }`
+
+#### 查询限价单
+```
+POST /bapi/defi/v1/public/wallet-direct/web-dex/agent/batch-query-limit-orders
+```
+返回：`{ data: { total, rows: [{ strategyId, fromTokenName, fromTokenQty, toTokenName, toTokenActualQty, price, side, status }] } }`
+
+#### 取消限价单
+```
+POST /bapi/defi/v1/public/wallet-direct/web-dex/agent/cancel-limit-order
+Body: { strategyId: number }
+返回：{ data: { strategyId, status: "CANCELED" } }
+```
+
+### 11.2 钱包 API（需登录 session）
+
+| 端点 | 方法 | 说明 |
+|:--|:--|:--|
+| /bapi/defi/v1/public/wallet-direct/agent-wallet/login | POST | 登录 |
+| /bapi/defi/v1/public/wallet-direct/agent-wallet/login/confirm | POST | 登录确认 |
+| /bapi/defi/v1/public/wallet-direct/agent-wallet/login/query | GET | 登录状态 |
+| /bapi/defi/v1/public/wallet-direct/agent-wallet/login/logout | POST | 登出 |
+| /bapi/defi/v1/public/wallet-direct/agent-wallet/mpc-wallet/list | POST | 钱包列表 |
+| /bapi/defi/v1/public/wallet-direct/agent-wallet/mpc-wallet/token/list | POST | 代币余额 |
+| /bapi/defi/v1/public/wallet-direct/agent-wallet/transfer | POST | 转账 |
+| /bapi/defi/v1/public/wallet-direct/agent-wallet/settings/query | GET | 安全设置 |
+| /bapi/defi/v1/public/wallet-direct/agent-wallet/trading-limit/query | GET | 每日额度 |
+| /bapi/defi/v1/public/wallet-direct/agent-wallet/order/tx-lock-status | POST | 交易锁状态 |
+| /bapi/defi/v1/public/wallet-direct/agent/tx-history-confirm | GET | 已确认交易 |
+| /bapi/defi/v1/public/wallet-direct/agent/tx-history-pending | GET | 待确认交易 |
+| /bapi/defi/v1/public/wallet-direct/agent/tx-status | GET | 交易状态 |
+| /bapi/defi/v1/public/wallet-direct/mgmt/agent/networks/active | GET | 支持的链 |
+
+### 11.3 数据 API（公开，无需登录）
+
+| 端点 | 方法 | 说明 |
+|:--|:--|:--|
+| /bapi/defi/v1/public/wallet-direct/security/token/audit | POST | 代币安全审计 |
+| /bapi/defi/v1/public/wallet-direct/buw/wallet/web/signal/smart-money/ai | POST | 聪明钱信号 |
+| /bapi/defi/v1/public/wallet-direct/buw/wallet/market/token/pulse/social/hype/rank/leaderboard/ai | GET | 社交热度排行 |
+| /bapi/defi/v1/public/wallet-direct/buw/wallet/market/token/pulse/unified/rank/list/ai | POST | 统一代币排行 |
+| /bapi/defi/v1/public/wallet-direct/tracker/wallet/token/inflow/rank/query/ai | POST | 聪明钱净流入 |
+| /bapi/defi/v1/public/wallet-direct/buw/wallet/market/token/pulse/exclusive/rank/list/ai | GET | Meme 排行 |
+| /bapi/defi/v5/public/wallet-direct/buw/wallet/market/token/search/ai | GET | 代币搜索 |
+| /bapi/defi/v1/public/wallet-direct/buw/wallet/dex/market/token/meta/info/ai | GET | 代币元数据 |
+| /bapi/defi/v4/public/wallet-direct/buw/wallet/market/token/dynamic/info/ai | GET | 代币实时动态 |
+| /bapi/defi/v3/public/wallet-direct/buw/wallet/address/pnl/active-position-list/ai | GET | 钱包持仓 |
+| /bapi/defi/v1/public/wallet-direct/buw/wallet/market/token/pulse/rank/list/ai | POST | 发射台 |
+| /bapi/defi/v2/public/wallet-direct/buw/wallet/market/token/social-rush/rank/list/ai | GET | AI 热门话题 |
+| /bapi/defi/v1/public/wallet-direct/buw/wallet/market/token/rwa/stock/detail/list/ai | POST | 代币化美股 |
+
+### 11.4 预测市场 API（需登录）
+
+| 端点 | 方法 | 说明 |
+|:--|:--|:--|
+| /bapi/defi/v1/public/wallet-direct/prediction/category/list | POST | 分类列表 |
+| /bapi/defi/v1/public/wallet-direct/prediction/agent/market/list | POST | 市场列表 |
+| /bapi/defi/v1/public/wallet-direct/prediction/agent/market/detail | POST | 市场详情 |
+| /bapi/defi/v1/public/wallet-direct/prediction/agent/market/search | POST | 搜索市场 |
+| /bapi/defi/v1/public/wallet-direct/prediction/agent/trade/get-quote | POST | 获取报价 |
+| /bapi/defi/v1/public/wallet-direct/prediction/agent/trade/place-order-bundle | POST | 下注 |
+| /bapi/defi/v1/public/wallet-direct/prediction/agent/trade/batch-cancel | POST | 取消订单 |
+| /bapi/defi/v1/public/wallet-direct/prediction/agent/batch-redeem | POST | 兑换奖励 |
+| /bapi/defi/v1/public/wallet-direct/prediction/agent/position/list | POST | 我的仓位 |
+| /bapi/defi/v1/public/wallet-direct/prediction/agent/pnl/portfolio | POST | 投资组合 |
+
+### 11.5 集成方案
+
+| 我们项目的功能 | 对应 API | 优先级 |
+|:--|:--|:--|
+| 代币安全审计（交易前检查） | POST /security/token/audit | P0 |
+| 聪明钱信号（AI 评分增强） | POST /signal/smart-money/ai | P0 |
+| 代币实时价格 | GET /token/dynamic/info/ai | P0 |
+| 代币搜索 | GET /token/search/ai | P1 |
+| 社交热度排行 | GET /social/hype/rank/leaderboard/ai | P1 |
+| 聪明钱流入排行 | POST /inflow/rank/query/ai | P1 |
+| 发射台数据 | POST /pulse/rank/list/ai | P1 |
+| 实盘 swap 交易 | POST /web-dex/agent/place-order | P2 |
+| 实盘限价单（止盈止损） | POST /web-dex/agent/place-limit-order | P2 |
+| 钱包余额查询 | POST /mpc-wallet/token/list | P2 |
+
+---
+
+## 十二、相关文档
 
 - Binance Skills Hub：https://github.com/binance/binance-skills-hub
 - Fork 到我们 GitHub：https://github.com/moying2026/binance-skills-hub
