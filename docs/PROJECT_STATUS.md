@@ -1,6 +1,6 @@
 # Web3 AI 投资决策系统 — 项目状态
 
-> 版本：v0.5.0
+> 版本：v0.6.0
 > 日期：2026-06-05
 > 更新人：项目牧羊人
 
@@ -52,6 +52,10 @@
 | **后端服务** | checkAndTriggerPendingOrders 价格触发引擎 | 后端架构师 |
 | **后端服务** | 模拟盘支付代币按链切换（BNB/SOL/ETH） | 后端架构师 |
 | **后端服务** | /api/sim/pending-orders、/api/sim/trades/by-side 端点 | 后端架构师 |
+| **后端服务** | sim_trades 表结构迁移对齐 Binance Web3 swap API | 后端架构师 |
+| **后端服务** | Skills 官方 API 替换自编方法（8处端点） | 后端架构师 |
+| **后端服务** | 预算控制（总预算$10,000/单笔$100/持币上限1,000） | 后端架构师 |
+| **后端服务** | 模拟盘全量买入（不依赖AI评分） | 后端架构师 |
 | **后端服务** | AI 评估引擎（5维评分） | 后端架构师 |
 | **后端服务** | 多 Agent 评分框架（5个 Agent Service） | 后端架构师 |
 | **后端服务** | 阈值配置化（config/thresholds.ts） | 后端架构师 |
@@ -77,7 +81,9 @@
 | 任务 | 负责人 | 说明 |
 |:--|:--|:--|
 | 战壕页面新币拦截 | 桌面自动化助理 | 脚本已写好（trench_interceptor.py），待部署运行 |
-| BrowserAct 能力集成 | 后端架构师 | stealth 注入 + 索引式交互 API |
+| BrowserAct 能力集成 | 后端架构师 | stealth 注入 + 索引式交互 API（已完成） |
+| Binance Skills 集成 | 后端架构师 | 8个 Skills + 底层 API 端点明细（已完成） |
+| baw CLI 实盘对接 | 后端架构师 | 使用 Binance Agentic Wallet 执行交易 |
 
 ### 待开始
 

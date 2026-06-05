@@ -88,3 +88,14 @@
 **事件：** 创建项目
 **执行人：** 后端架构师
 **内容摘要：** Web3 AI 投资决策系统 v0.1.0 初始骨架。commit b25ca38。
+
+## 2026-06-05 23:18 表结构迁移 + Skills API 替换完成
+
+**事件：** 完成子任务
+**执行人：** 后端架构师
+**内容摘要：** 
+- sim_trades 表结构迁移对齐 Binance Web3 swap API（commit 9dcb0b0）
+- SQL 查询和参数校验对齐新表结构（commit 952a008）
+- Skills 官方 API 替换自编方法 8 处端点（commit 11d9ee7）
+- Skills 文档 API 端点明细 524 行（commit b002896）
+- 测试主管回归测试全部通过
