@@ -98,11 +98,11 @@ export function ensureSimTables(): void {
     CREATE TABLE IF NOT EXISTS portfolio_state (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       portfolio_id TEXT NOT NULL UNIQUE DEFAULT 'main',
-      total_budget REAL DEFAULT 1000,      -- 总预算
+      total_budget REAL DEFAULT 10000,     -- 总预算
       used_budget REAL DEFAULT 0,           -- 已用预算
-      available_budget REAL DEFAULT 1000,   -- 可用预算
-      max_per_trade_pct REAL DEFAULT 10,    -- 单笔最大投入占比(%)
-      max_positions INTEGER DEFAULT 20,     -- 同时持仓上限
+      available_budget REAL DEFAULT 10000,  -- 可用预算
+      max_per_trade_amount REAL DEFAULT 100, -- 单笔最大投入金额
+      max_positions INTEGER DEFAULT 1000,   -- 持币种类上限
       max_chain_pct REAL DEFAULT 40,        -- 单链最大投入占比(%)
       total_trades INTEGER DEFAULT 0,
       winning_trades INTEGER DEFAULT 0,
@@ -138,9 +138,8 @@ function checkBudget(amount: number, chainId: string): { ok: boolean; reason?: s
   }
 
   // 检查单笔最大投入
-  const maxPerTrade = p.total_budget * (p.max_per_trade_pct / 100);
-  if (amount > maxPerTrade) {
-    return { ok: false, reason: `exceeds_max_per_trade: $${amount} > $${maxPerTrade} (${p.max_per_trade_pct}%)` };
+  if (amount > p.max_per_trade_amount) {
+    return { ok: false, reason: `exceeds_max_per_trade: $${amount} > $${p.max_per_trade_amount}` };
   }
 
   // 检查持仓数量上限
@@ -199,7 +198,7 @@ export function getPortfolioInfo(): any {
     total_budget: p.total_budget,
     used_budget: p.used_budget,
     available_budget: p.available_budget,
-    max_per_trade_pct: p.max_per_trade_pct,
+    max_per_trade_amount: p.max_per_trade_amount,
     max_positions: p.max_positions,
     max_chain_pct: p.max_chain_pct,
     open_positions: openTrades?.c || 0,
@@ -212,7 +211,7 @@ export function getPortfolioInfo(): any {
   };
 }
 
-export function updateBudget(config: { total_budget?: number; max_per_trade_pct?: number; max_positions?: number; max_chain_pct?: number }): any {
+export function updateBudget(config: { total_budget?: number; max_per_trade_amount?: number; max_positions?: number; max_chain_pct?: number }): any {
   ensureSimTables();
   const p = getPortfolio();
   if (!p) return null;
@@ -227,9 +226,9 @@ export function updateBudget(config: { total_budget?: number; max_per_trade_pct?
     updates.push('available_budget = available_budget + ?');
     params.push(diff);
   }
-  if (config.max_per_trade_pct !== undefined) {
-    updates.push('max_per_trade_pct = ?');
-    params.push(config.max_per_trade_pct);
+  if (config.max_per_trade_amount !== undefined) {
+    updates.push('max_per_trade_amount = ?');
+    params.push(config.max_per_trade_amount);
   }
   if (config.max_positions !== undefined) {
     updates.push('max_positions = ?');

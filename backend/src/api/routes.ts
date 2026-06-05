@@ -378,8 +378,8 @@ router.get('/sim/portfolio', (_req: Request, res: Response) => {
 router.put('/sim/portfolio', (req: Request, res: Response) => {
   try {
     ensureSimTables();
-    const { total_budget, max_per_trade_pct, max_positions, max_chain_pct } = req.body;
-    const result = updateBudget({ total_budget, max_per_trade_pct, max_positions, max_chain_pct });
+    const { total_budget, max_per_trade_amount, max_positions, max_chain_pct } = req.body;
+    const result = updateBudget({ total_budget, max_per_trade_amount, max_positions, max_chain_pct });
     res.json({ code: 0, data: result });
   } catch (err: any) {
     res.status(500).json({ code: -1, message: err.message });
