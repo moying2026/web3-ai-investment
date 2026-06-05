@@ -3,7 +3,7 @@ import { fetchOnchainSupplyData } from './onchainService';
 import { fetchIssuerData } from './issuerService';
 import { initExtendedTables, fetchExtendedData } from './binanceExtendedApi';
 import { initAnalysisTable, analyzeNewTokens } from './aiAnalysisService';
-import { executeAutoBuy, executeAutoBuyAll, checkAndClosePositions } from './simTradeService';
+import { executeAutoBuyAll, checkAndClosePositions } from './simTradeService';
 import { db } from '../db/database';
 import { registerModule, isModuleRunning, recordRun, initSystemControl } from './systemControl';
 import {

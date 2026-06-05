@@ -5,7 +5,7 @@ import {
   getSocialTopics, getStats
 } from '../services/tokenService';
 import { addSSEClient, getNewTokenBuffer, getLastPollTime } from '../services/pollingService';
-import { ensureSimTables, closePosition, getPendingOrders, getTradesBySide, getPortfolioInfo, updateBudget } from '../services/simTradeService';
+import { ensureSimTables, placeOrder, closePosition, getPendingOrders, getTradesBySide, getPortfolioInfo, updateBudget } from '../services/simTradeService';
 
 const router = Router();
 
@@ -303,40 +303,17 @@ export default router;
 
 // ============ 模拟盘 API ============
 
-// POST /api/sim/trades — 创建模拟交易（支持 BUY 和 SELL 独立记录）
+// POST /api/sim/trades — 创建交易（统一 placeOrder）
 router.post('/sim/trades', (req: Request, res: Response) => {
   try {
     ensureSimTables();
-    const { v4: uuidv4 } = require('uuid');
-    const { chain_id, contract_address, symbol, side, entry_price, entry_amount, stop_loss_percent, take_profit_percent, trade_type, strategy, trigger_reason, payment_token } = req.body;
-    if (!chain_id || !contract_address || !side || !entry_price) {
-      res.status(400).json({ code: -1, message: '缺少必填字段: chain_id, contract_address, side, entry_price' });
-      return;
+    const { chain_id, contract_address, symbol, side, price, amount, quantity, stop_loss_percent, take_profit_percent, strategy, trigger_reason, is_simulated } = req.body;
+    if (!chain_id || !contract_address || !side || !price) {
+      res.status(400).json({ code: -1, message: '缺少必填字段: chain_id, contract_address, side, price' }); return;
     }
-    const trade_id = uuidv4();
-    const entry_quantity = entry_amount ? (parseFloat(entry_amount) / parseFloat(entry_price)).toString() : null;
-    const stop_loss_price = stop_loss_percent ? (parseFloat(entry_price) * (1 - stop_loss_percent / 100)).toString() : null;
-    const take_profit_price = take_profit_percent ? (parseFloat(entry_price) * (1 + take_profit_percent / 100)).toString() : null;
-    const now = new Date().toISOString();
-    const CHAIN_MAP: Record<string, string> = { 'bsc': 'BNB', '56': 'BNB', 'solana': 'SOL', 'CT_501': 'SOL', 'base': 'ETH', '8453': 'ETH', 'eth': 'ETH', '1': 'ETH' };
-    const resolvedPaymentToken = payment_token || CHAIN_MAP[chain_id] || 'USDT';
-
-    (db.prepare(`INSERT INTO sim_trades (
-      trade_id, trade_type, strategy, chain_id, contract_address, symbol,
-      side, order_type, payment_token, payment_amount, entry_price, entry_amount, entry_quantity,
-      stop_loss_price, stop_loss_percent, take_profit_price, take_profit_percent,
-      trigger_reason, status, entry_time
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'MARKET', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?)`)).run(
-      trade_id, trade_type || 'manual', strategy || null, chain_id, contract_address, symbol || null,
-      side, resolvedPaymentToken, entry_amount || null, entry_price, entry_amount || null, entry_quantity,
-      stop_loss_price, stop_loss_percent || null, take_profit_price, take_profit_percent || null,
-      trigger_reason || null, now
-    );
-
-    // 更新组合统计
-    (db.prepare("UPDATE portfolio_state SET total_trades = total_trades + 1, last_trade_at = datetime('now') WHERE portfolio_id = 'main'")).run();
-
-    const trade = (db.prepare('SELECT * FROM sim_trades WHERE trade_id = ?')).get(trade_id);
+    const result = placeOrder({ chain_id, contract_address, symbol, side, price: parseFloat(price), amount: amount ? parseFloat(amount) : undefined, quantity: quantity ? parseFloat(quantity) : undefined, is_simulated: is_simulated ?? 1, strategy, trigger_reason, stop_loss_percent, take_profit_percent });
+    if (!result.success) { res.status(400).json({ code: -1, message: result.reason }); return; }
+    const trade = (db.prepare('SELECT * FROM sim_trades WHERE trade_id = ?')).get(result.trade_id);
     res.json({ code: 0, data: trade });
   } catch (err: any) {
     res.status(500).json({ code: -1, message: err.message });
@@ -356,7 +333,7 @@ router.get('/sim/trades', (req: Request, res: Response) => {
     if (status) { where += ' AND status = ?'; params.push(status); }
 
     const total = (db.prepare(`SELECT COUNT(*) as c FROM sim_trades WHERE ${where}`)).get(...params) as any;
-    const data = (db.prepare(`SELECT * FROM sim_trades WHERE ${where} ORDER BY entry_time DESC LIMIT ? OFFSET ?`)).all(...params, pageSize, offset);
+    const data = (db.prepare(`SELECT * FROM sim_trades WHERE ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`)).all(...params, pageSize, offset);
     res.json({ code: 0, data: { data, total: total.c, page, pageSize } });
   } catch (err: any) {
     res.status(500).json({ code: -1, message: err.message });
@@ -394,14 +371,13 @@ router.put('/sim/trades/:id/close', (req: Request, res: Response) => {
     const { exit_price, exit_reason } = req.body;
     if (!exit_price) { res.status(400).json({ code: -1, message: '缺少 exit_price' }); return; }
 
-    const trade = (db.prepare('SELECT * FROM sim_trades WHERE trade_id = ? AND side = ? AND status = ?')).get(tradeId, 'BUY', 'OPEN') as any;
+    const trade = (db.prepare('SELECT * FROM sim_trades WHERE trade_id = ? AND side = ? AND status = ?')).get(tradeId, 'BUY', 'FILLED') as any;
     if (!trade) { res.status(404).json({ code: -1, message: 'BUY 记录未找到或已关闭' }); return; }
 
-    // 使用 simTradeService 创建独立 SELL 记录
     closePosition(trade, parseFloat(exit_price), exit_reason || 'manual');
 
     const updated = (db.prepare('SELECT * FROM sim_trades WHERE trade_id = ?')).get(tradeId);
-    const sellRecord = (db.prepare('SELECT * FROM sim_trades WHERE parent_trade_id = ? AND side = ? ORDER BY entry_time DESC LIMIT 1').get(tradeId, 'SELL')) as any;
+    const sellRecord = (db.prepare('SELECT * FROM sim_trades WHERE parent_trade_id = ? AND side = ? ORDER BY created_at DESC LIMIT 1').get(tradeId, 'SELL')) as any;
     res.json({ code: 0, data: { buy: updated, sell: sellRecord } });
   } catch (err: any) {
     res.status(500).json({ code: -1, message: err.message });
@@ -442,12 +418,12 @@ router.get('/sim/trades/by-side', (req: Request, res: Response) => {
 router.get('/sim/stats', (_req: Request, res: Response) => {
   try {
     const total = (db.prepare("SELECT COUNT(*) as c FROM sim_trades").get() as any).c;
-    const openCount = (db.prepare("SELECT COUNT(*) as c FROM sim_trades WHERE status = 'OPEN'").get() as any).c;
-    const closedCount = (db.prepare("SELECT COUNT(*) as c FROM sim_trades WHERE status = 'CLOSED'").get() as any).c;
-    const winCount = (db.prepare("SELECT COUNT(*) as c FROM sim_trades WHERE status = 'CLOSED' AND CAST(pnl AS REAL) > 0").get() as any).c;
-    const lossCount = (db.prepare("SELECT COUNT(*) as c FROM sim_trades WHERE status = 'CLOSED' AND CAST(pnl AS REAL) <= 0").get() as any).c;
-    const totalPnl = (db.prepare("SELECT COALESCE(SUM(CAST(pnl AS REAL)), 0) as s FROM sim_trades WHERE status = 'CLOSED'").get() as any).s;
-    const avgHolding = (db.prepare("SELECT COALESCE(AVG(holding_duration_minutes), 0) as a FROM sim_trades WHERE status = 'CLOSED' AND holding_duration_minutes IS NOT NULL").get() as any).a;
+    const openCount = (db.prepare("SELECT COUNT(*) as c FROM sim_trades WHERE status = 'NEW'").get() as any).c;
+    const closedCount = (db.prepare("SELECT COUNT(*) as c FROM sim_trades WHERE status = 'FILLED'").get() as any).c;
+    const winCount = (db.prepare("SELECT COUNT(*) as c FROM sim_trades WHERE status = 'FILLED' AND CAST(pnl AS REAL) > 0").get() as any).c;
+    const lossCount = (db.prepare("SELECT COUNT(*) as c FROM sim_trades WHERE status = 'FILLED' AND CAST(pnl AS REAL) <= 0").get() as any).c;
+    const totalPnl = (db.prepare("SELECT COALESCE(SUM(CAST(pnl AS REAL)), 0) as s FROM sim_trades WHERE status = 'FILLED'").get() as any).s;
+    const avgHolding = (db.prepare("SELECT COALESCE(AVG(holding_duration_minutes), 0) as a FROM sim_trades WHERE status = 'FILLED' AND holding_duration_minutes IS NOT NULL").get() as any).a;
     const portfolio = (db.prepare("SELECT * FROM portfolio_state WHERE portfolio_id = 'main'").get() as any);
     const maxDrawdown = portfolio ? parseFloat(portfolio.max_drawdown_percent || '0') : 0;
     const winRate = closedCount > 0 ? (winCount / closedCount * 100) : 0;
@@ -455,16 +431,16 @@ router.get('/sim/stats', (_req: Request, res: Response) => {
     // 按策略分布
     const byStrategy = db.prepare(`
       SELECT strategy, COUNT(*) as count,
-        SUM(CASE WHEN status = 'CLOSED' AND CAST(pnl AS REAL) > 0 THEN 1 ELSE 0 END) as wins,
-        COALESCE(SUM(CASE WHEN status = 'CLOSED' THEN CAST(pnl AS REAL) ELSE 0 END), 0) as total_pnl
+        SUM(CASE WHEN status = 'FILLED' AND CAST(pnl AS REAL) > 0 THEN 1 ELSE 0 END) as wins,
+        COALESCE(SUM(CASE WHEN status = 'FILLED' THEN CAST(pnl AS REAL) ELSE 0 END), 0) as total_pnl
       FROM sim_trades GROUP BY strategy
     `).all();
 
     // 按链分布
     const byChain = db.prepare(`
       SELECT chain_id, COUNT(*) as count,
-        SUM(CASE WHEN status = 'CLOSED' AND CAST(pnl AS REAL) > 0 THEN 1 ELSE 0 END) as wins,
-        COALESCE(SUM(CASE WHEN status = 'CLOSED' THEN CAST(pnl AS REAL) ELSE 0 END), 0) as total_pnl
+        SUM(CASE WHEN status = 'FILLED' AND CAST(pnl AS REAL) > 0 THEN 1 ELSE 0 END) as wins,
+        COALESCE(SUM(CASE WHEN status = 'FILLED' THEN CAST(pnl AS REAL) ELSE 0 END), 0) as total_pnl
       FROM sim_trades GROUP BY chain_id
     `).all();
 
@@ -535,7 +511,7 @@ router.get('/ai/analysis', (_req: Request, res: Response) => {
     const strategyStats = db.prepare(`
       SELECT st.strategy, COUNT(*) as trade_count,
         AVG(aa.score) as avg_score,
-        SUM(CASE WHEN st.status = 'CLOSED' AND CAST(st.pnl AS REAL) > 0 THEN 1 ELSE 0 END) as wins
+        SUM(CASE WHEN st.status = 'FILLED' AND CAST(st.pnl AS REAL) > 0 THEN 1 ELSE 0 END) as wins
       FROM sim_trades st
       JOIN ai_analysis aa ON st.chain_id = aa.chain_id AND st.contract_address = aa.contract_address
       WHERE st.trade_type = 'ai_auto'
