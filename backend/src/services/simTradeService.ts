@@ -1,4 +1,4 @@
-// 模拟/实盘统一交易服务 — 表结构对齐 Binance API，is_simulated 区分
+// 模拟/实盘统一交易服务 — 表结构对齐 Binance Web3 Swap API
 
 import { db } from '../db/database';
 import { AnalysisResult } from './aiAnalysisService';
@@ -27,37 +27,48 @@ export function ensureSimTables(): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS sim_trades (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      trade_id TEXT NOT NULL UNIQUE,
-      exchange_order_id TEXT,              -- 交易所订单号（模拟盘为空）
-      parent_trade_id TEXT,                -- SELL 关联的 BUY trade_id
-      trade_type TEXT DEFAULT 'manual',
+      trade_id TEXT NOT NULL UNIQUE,           -- 系统 UUID
+      tx_hash TEXT,                            -- 链上交易哈希（模拟盘为空）
+      parent_trade_id TEXT,                    -- SELL 关联的 BUY trade_id
+      trade_type TEXT DEFAULT 'manual',        -- manual/auto/live
       strategy TEXT,
-      chain_id TEXT NOT NULL,
+      chain_id TEXT NOT NULL,                  -- bsc/solana/base/eth
+      dex TEXT,                                -- DEX 名称（PancakeSwap/Uniswap 等）
       contract_address TEXT NOT NULL,
       symbol TEXT,
-      side TEXT NOT NULL,                  -- 'BUY' 或 'SELL'
-      order_type TEXT DEFAULT 'MARKET',
-      is_simulated INTEGER DEFAULT 1,      -- 1=模拟，0=实盘
-      payment_token TEXT DEFAULT 'USDT',
-      payment_amount TEXT,
-      price TEXT NOT NULL,                 -- 成交价（对齐 Binance price）
-      executed_qty TEXT,                   -- 成交数量（对齐 Binance executedQty）
-      cummulative_quote_qty TEXT,          -- 成交金额（对齐 Binance cummulativeQuoteQty）
+      side TEXT NOT NULL,                      -- 'BUY'（tokenIn→tokenOut）或 'SELL'（tokenOut→tokenIn）
+      is_simulated INTEGER DEFAULT 1,          -- 1=模拟，0=实盘
+      -- Web3 swap 字段（对齐 Binance Web3 Swap API）
+      from_token TEXT,                         -- 输入代币符号（如 USDT/BNB）
+      from_amount TEXT,                        -- 输入数量
+      from_contract TEXT,                      -- 输入代币合约地址
+      to_token TEXT,                           -- 输出代币符号
+      to_amount TEXT,                          -- 输出数量
+      to_contract TEXT,                        -- 输出代币合约地址
+      price TEXT,                              -- 成交价格（to_amount / from_amount）
+      price_impact TEXT,                       -- 价格影响百分比
+      gas_fee TEXT,                            -- Gas 费用（原生代币）
+      gas_token TEXT,                          -- Gas 代币（BNB/ETH/SOL）
+      fee_amount TEXT,                         -- 手续费金额
+      fee_token TEXT,                          -- 手续费代币
+      -- 止盈止损（本地逻辑）
       stop_loss_price TEXT,
       stop_loss_percent REAL,
       take_profit_price TEXT,
       take_profit_percent REAL,
       trigger_reason TEXT,
       trigger_scores TEXT,
-      status TEXT DEFAULT 'NEW',           -- NEW/FILLED/CANCELLED/PARTIALLY_FILLED
-      exchange_status TEXT,                -- 交易所原始状态
-      fills_json TEXT,                     -- 成交明细 JSON
+      -- 状态（对齐 Web3 swap 状态）
+      status TEXT DEFAULT 'PENDING',           -- PENDING/SUCCESS/FAILED/CANCELLED
+      swap_status TEXT,                        -- 交易所原始状态
+      -- 盈亏
       pnl TEXT,
       pnl_percent REAL,
       holding_duration_minutes INTEGER,
-      created_at INTEGER,                  -- 下单时间（毫秒时间戳）
-      updated_at INTEGER,                  -- 更新时间（毫秒时间戳）
-      closed_at INTEGER                    -- 平仓时间（毫秒时间戳）
+      -- 时间（毫秒时间戳）
+      created_at INTEGER,
+      updated_at INTEGER,
+      closed_at INTEGER
     )
   `);
 
@@ -119,9 +130,9 @@ function checkBudget(amount: number, chainId: string): { ok: boolean; reason?: s
   if (!p) return { ok: false, reason: 'portfolio_not_found' };
   if (amount > p.available_budget) return { ok: false, reason: `insufficient_budget: need $${amount}, available $${p.available_budget}` };
   if (amount > p.max_per_trade_amount) return { ok: false, reason: `exceeds_max_per_trade: $${amount} > $${p.max_per_trade_amount}` };
-  const openCount = (db.prepare("SELECT COUNT(*) as c FROM sim_trades WHERE side = 'BUY' AND status = 'FILLED'") as SqliteStatement).get() as any;
+  const openCount = (db.prepare("SELECT COUNT(*) as c FROM sim_trades WHERE side = 'BUY' AND status = 'SUCCESS'") as SqliteStatement).get() as any;
   if (openCount && openCount.c >= p.max_positions) return { ok: false, reason: `max_positions_reached: ${openCount.c}/${p.max_positions}` };
-  const chainInvested = (db.prepare("SELECT COALESCE(SUM(CAST(cummulative_quote_qty AS REAL)), 0) as s FROM sim_trades WHERE side = 'BUY' AND status = 'FILLED' AND chain_id = ?") as SqliteStatement).get(chainId) as any;
+  const chainInvested = (db.prepare("SELECT COALESCE(SUM(CAST(from_amount AS REAL)), 0) as s FROM sim_trades WHERE side = 'BUY' AND status = 'SUCCESS' AND chain_id = ?") as SqliteStatement).get(chainId) as any;
   const chainMax = p.total_budget * (p.max_chain_pct / 100);
   if (chainInvested && (chainInvested.s + amount) > chainMax) return { ok: false, reason: `chain_limit_exceeded: ${chainId} invested $${chainInvested.s}, limit $${chainMax}` };
   return { ok: true };
@@ -139,7 +150,7 @@ export function getPortfolioInfo(): any {
   ensureSimTables();
   const p = getPortfolio();
   if (!p) return null;
-  const openTrades = (db.prepare("SELECT COUNT(*) as c FROM sim_trades WHERE side = 'BUY' AND status = 'FILLED'") as SqliteStatement).get() as any;
+  const openTrades = (db.prepare("SELECT COUNT(*) as c FROM sim_trades WHERE side = 'BUY' AND status = 'SUCCESS'") as SqliteStatement).get() as any;
   return {
     portfolio_id: p.portfolio_id, total_budget: p.total_budget, used_budget: p.used_budget,
     available_budget: p.available_budget, max_per_trade_amount: p.max_per_trade_amount,
@@ -165,24 +176,31 @@ export function updateBudget(config: { total_budget?: number; max_per_trade_amou
   return getPortfolioInfo();
 }
 
-// ==================== 统一下单函数 ====================
+// ==================== 统一下单函数（Web3 swap 语义） ====================
 
 interface PlaceOrderParams {
   chain_id: string;
   contract_address: string;
   symbol?: string;
+  dex?: string;
   side: 'BUY' | 'SELL';
-  order_type?: string;
-  price: number;
-  quantity?: number;
-  amount?: number;
-  is_simulated?: number;       // 默认 1（模拟）
+  from_token?: string;        // 输入代币（如 USDT/BNB）
+  from_amount?: number;       // 输入数量
+  from_contract?: string;     // 输入代币合约
+  to_token?: string;          // 输出代币
+  to_amount?: number;         // 输出数量
+  to_contract?: string;       // 输出代币合约
+  price?: number;             // 成交价格
+  price_impact?: number;      // 价格影响
+  gas_fee?: number;           // Gas 费用
+  gas_token?: string;         // Gas 代币
+  is_simulated?: number;
   strategy?: string;
   trigger_reason?: string;
   trigger_scores?: any;
   stop_loss_percent?: number;
   take_profit_percent?: number;
-  parent_trade_id?: string;    // SELL 时关联 BUY
+  parent_trade_id?: string;
 }
 
 export function placeOrder(params: PlaceOrderParams): any {
@@ -191,74 +209,79 @@ export function placeOrder(params: PlaceOrderParams): any {
   const now = Date.now();
   const tradeId = uuidv4();
   const paymentToken = getPaymentToken(params.chain_id);
-  const amount = params.amount || (params.quantity ? params.quantity * params.price : 0);
-  const quantity = params.quantity || (amount > 0 ? amount / params.price : 0);
+
+  // 计算价格：如果没提供 price，用 to_amount / from_amount
+  const fromAmount = params.from_amount || 0;
+  const toAmount = params.to_amount || 0;
+  const price = params.price || (fromAmount > 0 && toAmount > 0 ? toAmount / fromAmount : 0);
   const slPct = params.stop_loss_percent ?? DEFAULT_STOP_LOSS;
   const tpPct = params.take_profit_percent ?? DEFAULT_TAKE_PROFIT;
-  const slPrice = (params.price * (1 + slPct / 100)).toString();
-  const tpPrice = (params.price * (1 + tpPct / 100)).toString();
+  const slPrice = price > 0 ? (price * (1 + slPct / 100)).toString() : '0';
+  const tpPrice = price > 0 ? (price * (1 + tpPct / 100)).toString() : '0';
 
   if (params.side === 'BUY') {
-    const budgetCheck = checkBudget(amount, params.chain_id);
+    const budgetCheck = checkBudget(fromAmount, params.chain_id);
     if (!budgetCheck.ok) {
-      console.log(`[Sim] SKIP ${params.symbol}: ${budgetCheck.reason}`);
+      console.log(`[Swap] SKIP ${params.symbol}: ${budgetCheck.reason}`);
       return { success: false, reason: budgetCheck.reason };
     }
   }
 
   if (isSimulated === 1) {
-    // 模拟盘：直接本地生成记录，立即标记 FILLED
+    // 模拟盘：本地直接生成 SUCCESS 记录
     (db.prepare(`INSERT INTO sim_trades (
-      trade_id, trade_type, strategy, chain_id, contract_address, symbol,
-      side, order_type, is_simulated, payment_token, payment_amount,
-      price, executed_qty, cummulative_quote_qty,
+      trade_id, trade_type, strategy, chain_id, dex, contract_address, symbol, side, is_simulated,
+      from_token, from_amount, from_contract, to_token, to_amount, to_contract,
+      price, price_impact, gas_fee, gas_token,
       stop_loss_price, stop_loss_percent, take_profit_price, take_profit_percent,
-      trigger_reason, trigger_scores, status, fills_json, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'FILLED', '[]', ?, ?)`)).run(
-      tradeId, params.is_simulated === 0 ? 'live' : 'auto', params.strategy || null,
-      params.chain_id, params.contract_address, params.symbol || null,
-      params.side, params.order_type || 'MARKET',
-      paymentToken, amount.toString(),
-      params.price.toString(), quantity.toString(), amount.toString(),
+      trigger_reason, trigger_scores, status, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SUCCESS', ?, ?)`)).run(
+      tradeId, 'auto', params.strategy || null, params.chain_id, params.dex || null,
+      params.contract_address, params.symbol || null, params.side,
+      params.from_token || paymentToken, fromAmount.toString(), params.from_contract || null,
+      params.to_token || params.symbol || null, toAmount.toString(), params.to_contract || null,
+      price.toString(), params.price_impact?.toString() || null,
+      params.gas_fee?.toString() || null, params.gas_token || paymentToken,
       slPrice, slPct, tpPrice, tpPct,
       params.trigger_reason || null, params.trigger_scores ? JSON.stringify(params.trigger_scores) : null,
       now, now
     );
 
     if (params.side === 'BUY') {
-      deductBudget(amount);
-      createPendingSellOrders(tradeId, params.chain_id, params.contract_address, params.symbol || null, quantity.toString(), params.price);
+      deductBudget(fromAmount);
+      createPendingSellOrders(tradeId, params.chain_id, params.contract_address, params.symbol || null, toAmount.toString(), price);
       db.prepare("UPDATE portfolio_state SET total_trades = total_trades + 1, position_count = position_count + 1, last_trade_at = ? WHERE portfolio_id = 'main'").run(now);
     }
 
-    console.log(`[Sim] ${params.side}: ${params.symbol} @ $${params.price.toFixed(8)} | $${amount} ${paymentToken}`);
-    return { success: true, trade_id: tradeId, status: 'FILLED', is_simulated: 1 };
+    console.log(`[Swap] ${params.side}: ${params.symbol} | ${fromAmount} ${params.from_token || paymentToken} → ${toAmount} ${params.to_token || params.symbol}`);
+    return { success: true, trade_id: tradeId, status: 'SUCCESS', is_simulated: 1 };
   } else {
-    // 实盘：记录为 NEW，等待交易所回调更新
+    // 实盘：记录为 PENDING，等待链上 txHash 回调
     (db.prepare(`INSERT INTO sim_trades (
-      trade_id, trade_type, strategy, chain_id, contract_address, symbol,
-      side, order_type, is_simulated, payment_token, payment_amount,
-      price, executed_qty, cummulative_quote_qty,
+      trade_id, trade_type, strategy, chain_id, dex, contract_address, symbol, side, is_simulated,
+      from_token, from_amount, from_contract, to_token, to_amount, to_contract,
+      price, price_impact, gas_fee, gas_token,
       stop_loss_price, stop_loss_percent, take_profit_price, take_profit_percent,
       trigger_reason, trigger_scores, status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'NEW', ?, ?)`)).run(
-      tradeId, 'live', params.strategy || null,
-      params.chain_id, params.contract_address, params.symbol || null,
-      params.side, params.order_type || 'MARKET',
-      paymentToken, amount.toString(),
-      params.price.toString(), quantity.toString(), amount.toString(),
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)`)).run(
+      tradeId, 'live', params.strategy || null, params.chain_id, params.dex || null,
+      params.contract_address, params.symbol || null, params.side,
+      params.from_token || paymentToken, fromAmount.toString(), params.from_contract || null,
+      params.to_token || params.symbol || null, toAmount.toString(), params.to_contract || null,
+      price.toString(), params.price_impact?.toString() || null,
+      params.gas_fee?.toString() || null, params.gas_token || paymentToken,
       slPrice, slPct, tpPrice, tpPct,
       params.trigger_reason || null, params.trigger_scores ? JSON.stringify(params.trigger_scores) : null,
       now, now
     );
-    return { success: true, trade_id: tradeId, status: 'NEW', is_simulated: 0 };
+    return { success: true, trade_id: tradeId, status: 'PENDING', is_simulated: 0 };
   }
 }
 
 // ==================== 挂单管理 ====================
 
 function createPendingSellOrders(buyTradeId: string, chainId: string, contractAddress: string, symbol: string | null, quantity: string, entryPrice: number): void {
-  if (!quantity) return;
+  if (!quantity || parseFloat(quantity) <= 0) return;
   const halfQty = (parseFloat(quantity) / 2).toString();
   const now = Date.now();
   const slPrice = entryPrice * (1 + DEFAULT_STOP_LOSS / 100);
@@ -300,24 +323,25 @@ function executePendingOrder(order: any, currentPrice: number): void {
 
   (db.prepare(`INSERT INTO sim_trades (
     trade_id, parent_trade_id, trade_type, strategy, chain_id, contract_address, symbol,
-    side, order_type, is_simulated, price, executed_qty, cummulative_quote_qty,
+    side, is_simulated, from_token, from_amount, to_token, to_amount, price,
     status, pnl, pnl_percent, holding_duration_minutes, created_at, updated_at, closed_at
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, 'SELL', 'MARKET', 1, ?, ?, ?, 'FILLED', ?, ?, ?, ?, ?, ?)`)).run(
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, 'SELL', 1, ?, ?, ?, ?, ?, 'SUCCESS', ?, ?, ?, ?, ?, ?)`)).run(
     uuidv4(), order.parent_trade_id, buyTrade?.trade_type || 'triggered', buyTrade?.strategy || null,
     order.chain_id, order.contract_address, order.symbol,
-    currentPrice.toString(), order.quantity, sellAmount.toString(),
+    buyTrade?.to_token || null, order.quantity, buyTrade?.from_token || null, sellAmount.toString(),
+    currentPrice.toString(),
     pnl.toFixed(6), pnlPct, holdMin, now, now, now
   );
 
   if (buyTrade) {
-    (db.prepare(`UPDATE sim_trades SET status = 'FILLED', closed_at = ?, updated_at = ?, pnl = ?, pnl_percent = ?, holding_duration_minutes = ? WHERE trade_id = ?`)).run(now, now, pnl.toFixed(6), pnlPct, holdMin, order.parent_trade_id);
-    const entryAmount = parseFloat(buyTrade.cummulative_quote_qty || '0');
+    (db.prepare(`UPDATE sim_trades SET status = 'SUCCESS', closed_at = ?, updated_at = ?, pnl = ?, pnl_percent = ?, holding_duration_minutes = ? WHERE trade_id = ?`)).run(now, now, pnl.toFixed(6), pnlPct, holdMin, order.parent_trade_id);
+    const entryAmount = parseFloat(buyTrade.from_amount || '0');
     if (entryAmount > 0) releaseBudget(entryAmount);
   }
 
   const isWin = pnl > 0;
-  (db.prepare(`UPDATE portfolio_state SET winning_trades = winning_trades + ?, losing_trades = losing_trades + ?, total_pnl = CAST(total_pnl AS REAL) + ?, position_count = (SELECT COUNT(*) FROM sim_trades WHERE side = 'BUY' AND status = 'FILLED'), updated_at = ? WHERE portfolio_id = 'main'`)).run(isWin ? 1 : 0, isWin ? 0 : 1, pnl, now);
-  console.log(`[Sim] SELL ${order.order_type}: ${order.symbol} @ $${currentPrice.toFixed(8)} | PnL: $${pnl.toFixed(2)} (${pnlPct.toFixed(2)}%)`);
+  (db.prepare(`UPDATE portfolio_state SET winning_trades = winning_trades + ?, losing_trades = losing_trades + ?, total_pnl = CAST(total_pnl AS REAL) + ?, position_count = (SELECT COUNT(*) FROM sim_trades WHERE side = 'BUY' AND status = 'SUCCESS'), updated_at = ? WHERE portfolio_id = 'main'`)).run(isWin ? 1 : 0, isWin ? 0 : 1, pnl, now);
+  console.log(`[Swap] SELL ${order.order_type}: ${order.symbol} | PnL: $${pnl.toFixed(2)} (${pnlPct.toFixed(2)}%)`);
 }
 
 // ==================== 手动平仓 ====================
@@ -326,32 +350,33 @@ export function closePosition(trade: any, exitPrice: number, exitReason: string)
   ensureSimTables();
   const now = Date.now();
   const entryPrice = parseFloat(trade.price);
-  const pnl = (exitPrice - entryPrice) / entryPrice * parseFloat(trade.cummulative_quote_qty || '100');
+  const pnl = (exitPrice - entryPrice) / entryPrice * parseFloat(trade.from_amount || '100');
   const pnlPct = ((exitPrice - entryPrice) / entryPrice) * 100;
   const holdMin = Math.floor((now - trade.created_at) / 60000);
-  const exitQty = trade.executed_qty;
+  const exitQty = trade.to_amount;
   const exitAmount = exitQty ? (parseFloat(exitQty) * exitPrice).toString() : null;
 
   (db.prepare(`INSERT INTO sim_trades (
     trade_id, parent_trade_id, trade_type, strategy, chain_id, contract_address, symbol,
-    side, order_type, is_simulated, price, executed_qty, cummulative_quote_qty,
+    side, is_simulated, from_token, from_amount, to_token, to_amount, price,
     status, pnl, pnl_percent, holding_duration_minutes, trigger_reason, created_at, updated_at, closed_at
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, 'SELL', 'MARKET', 1, ?, ?, ?, 'FILLED', ?, ?, ?, ?, ?, ?, ?)`)).run(
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, 'SELL', 1, ?, ?, ?, ?, ?, 'SUCCESS', ?, ?, ?, ?, ?, ?, ?)`)).run(
     uuidv4(), trade.trade_id, trade.trade_type, trade.strategy,
     trade.chain_id, trade.contract_address, trade.symbol,
-    exitPrice.toString(), exitQty, exitAmount,
+    trade.to_token || null, exitQty, trade.from_token || null, exitAmount,
+    exitPrice.toString(),
     pnl.toFixed(6), pnlPct, holdMin, exitReason, now, now, now
   );
 
-  (db.prepare(`UPDATE sim_trades SET status = 'FILLED', closed_at = ?, updated_at = ?, pnl = ?, pnl_percent = ?, holding_duration_minutes = ? WHERE trade_id = ?`)).run(now, now, pnl.toFixed(6), pnlPct, holdMin, trade.trade_id);
+  (db.prepare(`UPDATE sim_trades SET status = 'SUCCESS', closed_at = ?, updated_at = ?, pnl = ?, pnl_percent = ?, holding_duration_minutes = ? WHERE trade_id = ?`)).run(now, now, pnl.toFixed(6), pnlPct, holdMin, trade.trade_id);
   (db.prepare(`UPDATE sim_pending_orders SET status = 'CANCELED' WHERE parent_trade_id = ? AND status = 'PENDING'`)).run(trade.trade_id);
 
-  const entryAmount = parseFloat(trade.cummulative_quote_qty || '0');
+  const entryAmount = parseFloat(trade.from_amount || '0');
   if (entryAmount > 0) releaseBudget(entryAmount);
 
   const isWin = pnl > 0;
-  (db.prepare(`UPDATE portfolio_state SET winning_trades = winning_trades + ?, losing_trades = losing_trades + ?, total_pnl = CAST(total_pnl AS REAL) + ?, position_count = (SELECT COUNT(*) FROM sim_trades WHERE side = 'BUY' AND status = 'FILLED'), updated_at = ? WHERE portfolio_id = 'main'`)).run(isWin ? 1 : 0, isWin ? 0 : 1, pnl, now);
-  console.log(`[Sim] SELL(manual): ${trade.symbol} @ $${exitPrice.toFixed(8)} | PnL: $${pnl.toFixed(2)}`);
+  (db.prepare(`UPDATE portfolio_state SET winning_trades = winning_trades + ?, losing_trades = losing_trades + ?, total_pnl = CAST(total_pnl AS REAL) + ?, position_count = (SELECT COUNT(*) FROM sim_trades WHERE side = 'BUY' AND status = 'SUCCESS'), updated_at = ? WHERE portfolio_id = 'main'`)).run(isWin ? 1 : 0, isWin ? 0 : 1, pnl, now);
+  console.log(`[Swap] SELL(manual): ${trade.symbol} | PnL: $${pnl.toFixed(2)}`);
 }
 
 // ==================== 兼容旧接口 ====================
@@ -368,14 +393,21 @@ export function executeAutoBuyAll(): number {
   try { const rows = (db.prepare('SELECT chain_id, contract_address, score, recommendation FROM ai_analysis') as SqliteStatement).all() as any[]; for (const r of rows) aiMap.set(`${r.chain_id}:${r.contract_address}`, r); } catch (e) {}
 
   for (const token of allTokens) {
-    const existing = (db.prepare(`SELECT id FROM sim_trades WHERE chain_id = ? AND contract_address = ? AND side = 'BUY' AND status = 'FILLED'`) as SqliteStatement).get(token.chain_id, token.contract_address) as any;
+    const existing = (db.prepare(`SELECT id FROM sim_trades WHERE chain_id = ? AND contract_address = ? AND side = 'BUY' AND status = 'SUCCESS'`) as SqliteStatement).get(token.chain_id, token.contract_address) as any;
     if (existing) continue;
     const entryPrice = parseFloat(token.price_latest);
     if (entryPrice <= 0) continue;
     const ai = aiMap.get(`${token.chain_id}:${token.contract_address}`);
     const rec = ai ? ai.recommendation : 'AVOID';
     const buyAmount = BUY_AMOUNT_MAP[rec] || 10;
-    const result = placeOrder({ chain_id: token.chain_id, contract_address: token.contract_address, symbol: token.symbol, side: 'BUY', price: entryPrice, amount: buyAmount, is_simulated: 1, strategy: ai ? `ai_${rec.toLowerCase()}` : 'no_ai', trigger_reason: ai ? `AI:${ai.score}分(${rec})` : '无AI评估', trigger_scores: ai?.dimensionScores, stop_loss_percent: DEFAULT_STOP_LOSS, take_profit_percent: DEFAULT_TAKE_PROFIT });
+    const paymentToken = getPaymentToken(token.chain_id);
+    const result = placeOrder({
+      chain_id: token.chain_id, contract_address: token.contract_address, symbol: token.symbol, side: 'BUY',
+      from_token: paymentToken, from_amount: buyAmount, to_token: token.symbol, to_amount: buyAmount / entryPrice,
+      price: entryPrice, is_simulated: 1, strategy: ai ? `ai_${rec.toLowerCase()}` : 'no_ai',
+      trigger_reason: ai ? `AI:${ai.score}分(${rec})` : '无AI评估', trigger_scores: ai?.dimensionScores,
+      stop_loss_percent: DEFAULT_STOP_LOSS, take_profit_percent: DEFAULT_TAKE_PROFIT,
+    });
     if (result.success) buyCount++;
   }
   return buyCount;
@@ -398,7 +430,7 @@ export function getAccuracyStats(): any {
   const total = (db.prepare("SELECT COUNT(*) as c FROM ai_analysis").get() as any).c;
   const buyCount = (db.prepare("SELECT COUNT(*) as c FROM ai_analysis WHERE recommendation = 'BUY'").get() as any).c;
   const allTrades = (db.prepare(`SELECT st.*, aa.score as ai_score, aa.recommendation as ai_recommendation FROM sim_trades st JOIN ai_analysis aa ON st.chain_id = aa.chain_id AND st.contract_address = aa.contract_address WHERE st.trade_type = 'auto' AND st.side = 'BUY'`) as SqliteStatement).all() as any[];
-  const closedTrades = allTrades.filter(t => t.status === 'FILLED' && t.pnl);
+  const closedTrades = allTrades.filter(t => t.status === 'SUCCESS' && t.pnl);
   const profitable = closedTrades.filter(t => parseFloat(t.pnl) > 0);
   const totalPnl = closedTrades.reduce((s, t) => s + parseFloat(t.pnl || '0'), 0);
   const winRate = closedTrades.length > 0 ? (profitable.length / closedTrades.length * 100) : 0;
