@@ -530,29 +530,29 @@ const Trading: React.FC = () => {
 
   const renderStatsAndKline = () => (
     <Spin spinning={statsLoading}>
-      <div style={{ display: 'flex', gap: 16, marginBottom: 16, alignItems: 'stretch' }}>
+      <div style={{ display: 'flex', gap: 12, marginBottom: 12, alignItems: 'stretch' }}>
         {/* 左侧：统计指标 + 每日盈亏，垂直排列 */}
-        <div style={{ width: 280, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <Card size="small">
-            <Statistic title="总交易次数" value={stats?.total ?? '-'} prefix={<TrophyOutlined />}
+        <div style={{ width: 260, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <Card size="small" bodyStyle={{ padding: '8px 12px' }}>
+            <Statistic title="总交易次数" value={stats?.total ?? '-'} prefix={<TrophyOutlined />} valueStyle={{ fontSize: 20 }}
               suffix={stats ? `(开 ${stats.open} / 平 ${stats.closed})` : undefined} />
           </Card>
-          <Card size="small">
+          <Card size="small" bodyStyle={{ padding: '8px 12px' }}>
             <Statistic title="胜利" value={winRateNum} precision={1} suffix="%" prefix={<PercentageOutlined />}
-              valueStyle={{ color: winRateNum >= 50 ? '#3f8600' : '#cf1322' }} />
+              valueStyle={{ color: winRateNum >= 50 ? '#3f8600' : '#cf1322', fontSize: 20 }} />
           </Card>
-          <Card size="small">
+          <Card size="small" bodyStyle={{ padding: '8px 12px' }}>
             <Statistic title="累计盈亏" value={totalPnlNum} precision={2} prefix="$"
-              valueStyle={{ color: totalPnlNum >= 0 ? '#3f8600' : '#cf1322' }} />
+              valueStyle={{ color: totalPnlNum >= 0 ? '#3f8600' : '#cf1322', fontSize: 20 }} />
           </Card>
-          <Card size="small">
-            <Statistic title="平均持仓" value={stats?.avgHoldingMinutes ?? '-'} suffix={stats ? '分钟' : ''} prefix={<ClockCircleOutlined />} />
+          <Card size="small" bodyStyle={{ padding: '8px 12px' }}>
+            <Statistic title="平均持仓" value={stats?.avgHoldingMinutes ?? '-'} suffix={stats ? '分钟' : ''} prefix={<ClockCircleOutlined />} valueStyle={{ fontSize: 20 }} />
           </Card>
-          <Card title="📊 每日盈亏" size="small" style={{ flex: 1, minHeight: 0 }}>
+          <Card title="📊 每日盈亏" size="small" style={{ flex: 1, minHeight: 0 }} bodyStyle={{ padding: '4px 8px' }}>
             {dailyPnl.dates.length > 0 ? (
-              <ReactECharts option={dailyPnlOption} style={{ height: 180 }} />
+              <ReactECharts option={dailyPnlOption} style={{ height: 90 }} />
             ) : (
-              <div style={{ textAlign: 'center', color: '#8c8c8c', padding: 30 }}>暂无已平仓交易数据</div>
+              <div style={{ textAlign: 'center', color: '#8c8c8c', padding: 16 }}>暂无已平仓交易数据</div>
             )}
           </Card>
         </div>
@@ -570,7 +570,7 @@ const Trading: React.FC = () => {
               }
               size="small"
               style={{ height: '100%' }}
-              bodyStyle={{ height: 'calc(100% - 56px)', display: 'flex', flexDirection: 'column' }}
+              bodyStyle={{ height: 'calc(100% - 46px)', display: 'flex', flexDirection: 'column', padding: '8px 12px' }}
               extra={
                 <Space size={4}>
                   {klinePeriods.map(p => (
@@ -580,11 +580,11 @@ const Trading: React.FC = () => {
                 </Space>
               }
             >
-              <ReactECharts option={klineOption} style={{ flex: 1, minHeight: 350 }} />
+              <ReactECharts option={klineOption} style={{ flex: 1, minHeight: 175 }} />
             </Card>
           ) : (
             <Card size="small" style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <div style={{ textAlign: 'center', color: '#8c8c8c', padding: 60 }}>选择交易查看 K 线图</div>
+              <div style={{ textAlign: 'center', color: '#8c8c8c', padding: 30 }}>选择交易查看 K 线图</div>
             </Card>
           )}
         </div>
