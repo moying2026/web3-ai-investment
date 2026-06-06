@@ -255,6 +255,9 @@ const Trading: React.FC = () => {
   const [filterChain, setFilterChain] = useState<string>('');
   const [filterSide, setFilterSide] = useState<string>('');
   const [filterSymbol, setFilterSymbol] = useState<string>('');
+  const [filterStrategy, setFilterStrategy] = useState<string>('');
+  const [filterOrderType, setFilterOrderType] = useState<string>('');
+  const [filterTradeType, setFilterTradeType] = useState<string>('');
 
   // 列显示控制
   const [visibleKeys, setVisibleKeys] = useState<Set<string>>(new Set(DEFAULT_VISIBLE_KEYS));
@@ -376,6 +379,9 @@ const Trading: React.FC = () => {
     if (filterChain) list = list.filter(t => t.chain_id === filterChain);
     if (filterSide) list = list.filter(t => t.side === filterSide);
     if (filterSymbol) list = list.filter(t => (t.symbol || '').toLowerCase().includes(filterSymbol.toLowerCase()));
+    if (filterStrategy) list = list.filter(t => t.strategy === filterStrategy);
+    if (filterOrderType) list = list.filter(t => t.order_type === filterOrderType);
+    if (filterTradeType) list = list.filter(t => t.trade_type === filterTradeType);
     // 排序
     list.sort((a, b) => {
       let va: any, vb: any;
@@ -390,17 +396,21 @@ const Trading: React.FC = () => {
       return tradesSortOrder === 'asc' ? (va - vb) : (vb - va);
     });
     return list;
-  }, [trades, filterSimType, filterChain, filterSide, filterSymbol, tradesSortField, tradesSortOrder]);
+  }, [trades, filterSimType, filterChain, filterSide, filterSymbol, filterStrategy, filterOrderType, filterTradeType, tradesSortField, tradesSortOrder]);
 
   // 筛选选项
   const filterOptions = useMemo(() => {
     const chains = new Set<string>();
     const symbols = new Set<string>();
+    const strategies = new Set<string>();
+    const orderTypes = new Set<string>();
     trades.forEach(t => {
       if (t.chain_id) chains.add(t.chain_id);
       if (t.symbol) symbols.add(t.symbol);
+      if (t.strategy) strategies.add(t.strategy);
+      if (t.order_type) orderTypes.add(t.order_type);
     });
-    return { chains, symbols };
+    return { chains, symbols, strategies, orderTypes };
   }, [trades]);
 
   // ===== 每日盈亏图表 =====
@@ -637,8 +647,31 @@ const Trading: React.FC = () => {
           value={filterSymbol || undefined}
           onChange={(e) => setFilterSymbol(e.target.value || '')}
         />
+        <Select
+          allowClear placeholder="策略" style={{ width: 110 }} size="small"
+          value={filterStrategy || undefined}
+          onChange={(v) => setFilterStrategy(v || '')}
+        >
+          {Array.from(filterOptions.strategies).map(s => <Select.Option key={s} value={s}>{s}</Select.Option>)}
+        </Select>
+        <Select
+          allowClear placeholder="订单类型" style={{ width: 110 }} size="small"
+          value={filterOrderType || undefined}
+          onChange={(v) => setFilterOrderType(v || '')}
+        >
+          {Array.from(filterOptions.orderTypes).map(o => <Select.Option key={o} value={o}>{o}</Select.Option>)}
+        </Select>
+        <Select
+          allowClear placeholder="交易模式" style={{ width: 110 }} size="small"
+          value={filterTradeType || undefined}
+          onChange={(v) => setFilterTradeType(v || '')}
+        >
+          <Select.Option value="ai_auto">AI自动</Select.Option>
+          <Select.Option value="manual">手动</Select.Option>
+        </Select>
         <Button size="small" icon={<ClearOutlined />} onClick={() => {
           setFilterStatus('all'); setFilterSimType('all'); setFilterChain(''); setFilterSide(''); setFilterSymbol('');
+          setFilterStrategy(''); setFilterOrderType(''); setFilterTradeType('');
         }}>
           重置
         </Button>
