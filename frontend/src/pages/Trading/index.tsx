@@ -134,13 +134,13 @@ interface ColumnDef {
 }
 
 const ALL_COLUMNS: ColumnDef[] = [
-  { key: 'symbol', title: '代币', width: 120, dataIndex: 'symbol', defaultVisible: true,
+  { key: 'symbol', title: '代币', width: 120, dataIndex: 'symbol', defaultVisible: true, sorter: true,
     render: (v: string | null, r: SimTrade) => <Tag>{v || r.contract_address?.slice(0, 8) + '...'}</Tag> },
-  { key: 'chain_id', title: '链', width: 80, dataIndex: 'chain_id', defaultVisible: true,
+  { key: 'chain_id', title: '链', width: 80, dataIndex: 'chain_id', defaultVisible: true, sorter: true,
     render: (v: string) => chainMap[v] || v },
-  { key: 'side', title: '方向', width: 70, dataIndex: 'side', defaultVisible: true,
+  { key: 'side', title: '方向', width: 70, dataIndex: 'side', defaultVisible: true, sorter: true,
     render: (v: string) => <Tag color={v === 'BUY' ? 'green' : 'red'}>{v === 'BUY' ? '买入' : '卖出'}</Tag> },
-  { key: 'status', title: '状态', width: 80, dataIndex: 'status', defaultVisible: true,
+  { key: 'status', title: '状态', width: 80, dataIndex: 'status', defaultVisible: true, sorter: true,
     render: (v: string) => <Tag color={v === 'PENDING' ? 'processing' : 'success'}>{v === 'PENDING' ? '持仓' : '已平仓'}</Tag> },
   { key: 'price', title: '价格', width: 120, dataIndex: 'price', defaultVisible: true, sorter: true,
     render: (v: string) => formatPrice(v) },
@@ -148,17 +148,17 @@ const ALL_COLUMNS: ColumnDef[] = [
     render: (v: string | null) => v ? formatNumber(parseFloat(v), { prefix: '$' }) : '-' },
   { key: 'to_amount', title: '获得数量', width: 100, dataIndex: 'to_amount', defaultVisible: true, sorter: true,
     render: (v: string | null) => v ? parseFloat(v).toLocaleString() : '-' },
-  { key: 'from_token', title: '支付代币', width: 90, dataIndex: 'from_token', defaultVisible: true,
+  { key: 'from_token', title: '支付代币', width: 90, dataIndex: 'from_token', defaultVisible: true, sorter: true,
     render: (v: string | null) => v || '-' },
-  { key: 'to_token', title: '获得代币', width: 90, dataIndex: 'to_token', defaultVisible: true,
+  { key: 'to_token', title: '获得代币', width: 90, dataIndex: 'to_token', defaultVisible: true, sorter: true,
     render: (v: string | null) => v || '-' },
-  { key: 'order_type', title: '订单类型', width: 90, dataIndex: 'order_type', defaultVisible: true,
+  { key: 'order_type', title: '订单类型', width: 90, dataIndex: 'order_type', defaultVisible: true, sorter: true,
     render: (v: string | null) => <Tag>{v || '-'}</Tag> },
-  { key: 'trade_type', title: '交易模式', width: 90, dataIndex: 'trade_type', defaultVisible: true,
+  { key: 'trade_type', title: '交易模式', width: 90, dataIndex: 'trade_type', defaultVisible: true, sorter: true,
     render: (v: string) => <Tag color={v === 'ai_auto' ? 'blue' : 'default'}>{v === 'ai_auto' ? 'AI自动' : '手动'}</Tag> },
-  { key: 'is_simulated', title: '模拟/实盘', width: 100, dataIndex: 'is_simulated', defaultVisible: true,
+  { key: 'is_simulated', title: '模拟/实盘', width: 100, dataIndex: 'is_simulated', defaultVisible: true, sorter: true,
     render: (v: number) => <Tag color={v ? 'orange' : 'green'}>{v ? '模拟' : '实盘'}</Tag> },
-  { key: 'strategy', title: '策略', width: 100, dataIndex: 'strategy', defaultVisible: true,
+  { key: 'strategy', title: '策略', width: 100, dataIndex: 'strategy', defaultVisible: true, sorter: true,
     render: (v: string | null) => v || '-' },
   { key: 'pnl', title: '盈亏', width: 110, dataIndex: 'pnl', defaultVisible: true, sorter: true,
     render: (v: string | null) => {
@@ -386,12 +386,25 @@ const Trading: React.FC = () => {
     list.sort((a, b) => {
       let va: any, vb: any;
       switch (tradesSortField) {
+        case 'symbol': va = a.symbol || ''; vb = b.symbol || ''; break;
+        case 'chain_id': va = a.chain_id || ''; vb = b.chain_id || ''; break;
+        case 'side': va = a.side || ''; vb = b.side || ''; break;
+        case 'status': va = a.status || ''; vb = b.status || ''; break;
         case 'price': va = parseFloat(a.price); vb = parseFloat(b.price); break;
         case 'from_amount': va = parseFloat(a.from_amount || '0'); vb = parseFloat(b.from_amount || '0'); break;
         case 'to_amount': va = parseFloat(a.to_amount || '0'); vb = parseFloat(b.to_amount || '0'); break;
+        case 'from_token': va = a.from_token || ''; vb = b.from_token || ''; break;
+        case 'to_token': va = a.to_token || ''; vb = b.to_token || ''; break;
+        case 'order_type': va = a.order_type || ''; vb = b.order_type || ''; break;
+        case 'trade_type': va = a.trade_type || ''; vb = b.trade_type || ''; break;
+        case 'is_simulated': va = a.is_simulated; vb = b.is_simulated; break;
+        case 'strategy': va = a.strategy || ''; vb = b.strategy || ''; break;
         case 'pnl': va = parseFloat(a.pnl || '0'); vb = parseFloat(b.pnl || '0'); break;
         case 'pnl_percent': va = parseFloat(a.pnl_percent || '0'); vb = parseFloat(b.pnl_percent || '0'); break;
         case 'created_at': default: va = new Date(a.created_at).getTime(); vb = new Date(b.created_at).getTime();
+      }
+      if (typeof va === 'string' && typeof vb === 'string') {
+        return tradesSortOrder === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
       }
       return tradesSortOrder === 'asc' ? (va - vb) : (vb - va);
     });
