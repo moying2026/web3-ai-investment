@@ -660,7 +660,7 @@ const Trading: React.FC = () => {
               rowKey="trade_id"
               size="small"
               loading={tradesLoading}
-              scroll={{ x: 1200, y: 460 }}
+              scroll={{ x: 1200, y: 300 }}
               pagination={false}
               locale={{ emptyText: '暂无交易数据' }}
               onChange={(_pg, _flt, sorter: any) => {
@@ -723,7 +723,7 @@ const Trading: React.FC = () => {
                 rowKey="trade_id"
                 size="small"
                 pagination={false}
-                scroll={{ y: 460 }}
+                scroll={{ y: 300 }}
                 locale={{ emptyText: '选择交易查看订单薄' }}
                 style={{ fontSize: 12, flex: 1 }}
               />
@@ -841,7 +841,7 @@ const Trading: React.FC = () => {
   return (
     <div>
       {renderStatsAndKline()}
-      <Card>
+      <Card size="small" bodyStyle={{ padding: '8px 16px' }}>
         <Tabs activeKey={activeTab} onChange={handleTabChange} items={tabItems} />
       </Card>
 
