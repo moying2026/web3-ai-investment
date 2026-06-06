@@ -549,7 +549,7 @@ const Trading: React.FC = () => {
           {/* 第三行：每日盈亏迷你图 */}
           <Card title="📊 每日盈亏" size="small" style={{ flex: 1, minHeight: 0 }} bodyStyle={{ padding: '4px 8px' }}>
             {dailyPnl.dates.length > 0 ? (
-              <ReactECharts option={dailyPnlOption} style={{ height: 120 }} />
+              <ReactECharts option={dailyPnlOption} style={{ height: 180 }} />
             ) : (
               <div style={{ textAlign: 'center', color: '#8c8c8c', padding: 16 }}>暂无已平仓交易数据</div>
             )}
