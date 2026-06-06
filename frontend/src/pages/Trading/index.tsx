@@ -6,7 +6,6 @@ import {
   HistoryOutlined,
   ThunderboltOutlined,
   SearchOutlined,
-  TrophyOutlined,
   PercentageOutlined,
   ClockCircleOutlined,
   ClearOutlined,
@@ -533,10 +532,21 @@ const Trading: React.FC = () => {
       <div style={{ display: 'flex', gap: 12, marginBottom: 12, alignItems: 'stretch' }}>
         {/* 左侧：统计指标 + 每日盈亏，垂直排列 */}
         <div style={{ width: 390, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {/* 第一行：总交易次数 */}
-          <Card size="small" bodyStyle={{ padding: '8px 12px' }}>
-            <Statistic title="总交易次数" value={stats?.total ?? '-'} prefix={<TrophyOutlined />} valueStyle={{ fontSize: 20 }}
-              suffix={stats ? `(开 ${stats.open} / 平 ${stats.closed})` : undefined} />
+          {/* 第一行：交易概况 */}
+          <Card size="small" bodyStyle={{ padding: '6px 12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', fontSize: 13 }}>
+              <span style={{ fontWeight: 600, color: '#262626' }}>交易概况</span>
+              <span>总交易次数: <strong>{stats?.total ?? '-'}</strong></span>
+              <span>开仓: <strong>{stats?.open ?? '-'}</strong></span>
+              <span>平仓: <strong>{stats?.closed ?? '-'}</strong></span>
+              <span>胜率: <strong style={{ color: winRateNum >= 50 ? '#3f8600' : '#cf1322' }}>{winRateNum.toFixed(1)}%</strong></span>
+              <span>盈亏: <strong style={{ color: totalPnlNum >= 0 ? '#3f8600' : '#cf1322' }}>{totalPnlNum >= 0 ? '+' : ''}{totalPnlNum.toFixed(3)}</strong></span>
+              {dailyPnl.values.length > 0 && (
+                <span>日盈亏: <strong style={{ color: dailyPnl.values[dailyPnl.values.length - 1] >= 0 ? '#3f8600' : '#cf1322' }}>
+                  {dailyPnl.values[dailyPnl.values.length - 1] >= 0 ? '+' : ''}{dailyPnl.values[dailyPnl.values.length - 1].toFixed(2)}
+                </strong></span>
+              )}
+            </div>
           </Card>
           {/* 第二行：胜率 | 累计盈亏 | 平均持仓 */}
           <div style={{ display: 'flex', gap: 8 }}>
