@@ -6,8 +6,6 @@ import {
   HistoryOutlined,
   ThunderboltOutlined,
   SearchOutlined,
-  PercentageOutlined,
-  ClockCircleOutlined,
   ClearOutlined,
   SettingOutlined,
 } from '@ant-design/icons';
@@ -548,20 +546,6 @@ const Trading: React.FC = () => {
               )}
             </div>
           </Card>
-          {/* 第二行：胜率 | 累计盈亏 | 平均持仓 */}
-          <div style={{ display: 'flex', gap: 8 }}>
-            <Card size="small" bodyStyle={{ padding: '8px 12px' }} style={{ flex: 1 }}>
-              <Statistic title="胜率" value={winRateNum} precision={1} suffix="%" prefix={<PercentageOutlined />}
-                valueStyle={{ color: winRateNum >= 50 ? '#3f8600' : '#cf1322', fontSize: 20 }} />
-            </Card>
-            <Card size="small" bodyStyle={{ padding: '8px 12px' }} style={{ flex: 1 }}>
-              <Statistic title="累计盈亏" value={totalPnlNum} precision={2} prefix="$"
-                valueStyle={{ color: totalPnlNum >= 0 ? '#3f8600' : '#cf1322', fontSize: 20 }} />
-            </Card>
-            <Card size="small" bodyStyle={{ padding: '8px 12px' }} style={{ flex: 1 }}>
-              <Statistic title="平均持仓" value={stats?.avgHoldingMinutes ?? '-'} suffix={stats ? '分钟' : ''} prefix={<ClockCircleOutlined />} valueStyle={{ fontSize: 20 }} />
-            </Card>
-          </div>
           {/* 第三行：每日盈亏迷你图 */}
           <Card title="📊 每日盈亏" size="small" style={{ flex: 1, minHeight: 0 }} bodyStyle={{ padding: '4px 8px' }}>
             {dailyPnl.dates.length > 0 ? (
