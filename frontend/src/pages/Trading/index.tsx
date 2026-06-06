@@ -839,9 +839,11 @@ const Trading: React.FC = () => {
   ];
 
   return (
-    <div>
-      {renderStatsAndKline()}
-      <Card size="small" bodyStyle={{ padding: '8px 16px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 64px - 48px)', overflow: 'hidden' }}>
+      <div style={{ flexShrink: 0 }}>
+        {renderStatsAndKline()}
+      </div>
+      <Card size="small" bodyStyle={{ padding: '8px 16px' }} style={{ flex: 1, minHeight: 0, overflow: 'auto', marginTop: 12 }}>
         <Tabs activeKey={activeTab} onChange={handleTabChange} items={tabItems} />
       </Card>
 
