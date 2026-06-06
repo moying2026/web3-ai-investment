@@ -597,7 +597,7 @@ const Trading: React.FC = () => {
   const renderOverview = () => (
     <>
       {/* 筛选区域 */}
-      <div style={{ marginBottom: 12, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+      <div style={{ marginBottom: 6, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <span style={{ color: '#8c8c8c', fontSize: 12 }}>筛选：</span>
         <Select
           style={{ width: 110 }} size="small"
@@ -651,9 +651,9 @@ const Trading: React.FC = () => {
       </div>
 
       {/* 主体：左侧表格 + 右侧订单薄 */}
-      <div style={{ display: 'flex', gap: 16, alignItems: 'stretch' }}>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'stretch' }}>
         <div style={{ flex: 2, minWidth: 0 }}>
-          <Card size="small" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+          <Card size="small" className="compact-table" style={{ height: '100%', display: 'flex', flexDirection: 'column' }} bodyStyle={{ padding: '4px 8px', display: 'flex', flexDirection: 'column', flex: 1 }}>
             <Table
               dataSource={filteredTrades}
               columns={visibleColumns}
@@ -674,7 +674,7 @@ const Trading: React.FC = () => {
                 style: { cursor: 'pointer', background: selectedTrade?.trade_id === record.trade_id ? '#e6f7ff' : undefined },
               })}
             />
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, padding: '0 8px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, padding: '0 8px' }}>
               <Space size={8}>
                 {[10, 20, 50, 100].map(size => (
                   <Button
