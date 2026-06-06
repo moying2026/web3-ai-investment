@@ -549,7 +549,7 @@ const Trading: React.FC = () => {
           {/* 第三行：每日盈亏迷你图 */}
           <Card title="📊 每日盈亏" size="small" style={{ flex: 1, minHeight: 0 }} bodyStyle={{ padding: '4px 8px' }}>
             {dailyPnl.dates.length > 0 ? (
-              <ReactECharts option={dailyPnlOption} style={{ height: 180 }} />
+              <ReactECharts option={dailyPnlOption} style={{ height: 120 }} />
             ) : (
               <div style={{ textAlign: 'center', color: '#8c8c8c', padding: 16 }}>暂无已平仓交易数据</div>
             )}
@@ -579,7 +579,7 @@ const Trading: React.FC = () => {
                 </Space>
               }
             >
-              <ReactECharts option={klineOption} style={{ flex: 1, minHeight: 175 }} />
+              <ReactECharts option={klineOption} style={{ flex: 1, minHeight: 120 }} />
             </Card>
           ) : (
             <Card size="small" style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -660,7 +660,7 @@ const Trading: React.FC = () => {
               rowKey="trade_id"
               size="small"
               loading={tradesLoading}
-              scroll={{ x: 1200, y: 300 }}
+              scroll={{ x: 1200, y: 200 }}
               pagination={false}
               locale={{ emptyText: '暂无交易数据' }}
               onChange={(_pg, _flt, sorter: any) => {
@@ -723,7 +723,7 @@ const Trading: React.FC = () => {
                 rowKey="trade_id"
                 size="small"
                 pagination={false}
-                scroll={{ y: 300 }}
+                scroll={{ y: 200 }}
                 locale={{ emptyText: '选择交易查看订单薄' }}
                 style={{ fontSize: 12, flex: 1 }}
               />
