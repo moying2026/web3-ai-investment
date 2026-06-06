@@ -307,76 +307,175 @@ export function checkAndTriggerPendingOrders(): number {
   return triggerCount;
 }
 
+/**
+ * 挂单触发执行：按实盘标准生成独立 SELL 记录
+ * 
+ * 核心原则（与 closePosition 一致）：
+ * 1. SELL 记录是完整的独立 swap 记录，Web3 swap 字段齐全
+ * 2. BUY 记录只更新状态为 CLOSED，不修改原始数据
+ * 3. PnL 等盈亏数据只记录在 SELL 记录上
+ */
 function executePendingOrder(order: any, currentPrice: number): void {
   const now = Date.now();
   const buyTrade = (db.prepare('SELECT * FROM sim_trades WHERE trade_id = ?') as SqliteStatement).get(order.parent_trade_id) as any;
 
+  // 更新挂单状态
   (db.prepare(`UPDATE sim_pending_orders SET status = 'TRIGGERED', triggered_at = ?, filled_price = ? WHERE order_id = ?`)).run(now, currentPrice.toString(), order.order_id);
   (db.prepare(`UPDATE sim_pending_orders SET status = 'CANCELED' WHERE parent_trade_id = ? AND order_id != ? AND status = 'PENDING'`)).run(order.parent_trade_id, order.order_id);
 
-  const entryPrice = buyTrade ? parseFloat(buyTrade.price) : 0;
-  const sellQty = parseFloat(order.quantity);
-  const sellAmount = sellQty * currentPrice;
-  const pnl = entryPrice > 0 ? (currentPrice - entryPrice) * sellQty : 0;
-  const pnlPct = entryPrice > 0 ? ((currentPrice - entryPrice) / entryPrice) * 100 : 0;
+  // PnL 计算（实盘方式：SELL 收入 - BUY 支出）
+  const buyFromAmount = buyTrade ? parseFloat(buyTrade.from_amount || '0') : 0;  // BUY 支出
+  const sellQty = parseFloat(order.quantity);                                     // SELL 卖出的代币数量
+  const sellToAmount = sellQty * currentPrice;                                   // SELL 获得的支付代币
+  const pnl = sellToAmount - buyFromAmount;                                      // 盈亏 = SELL 收入 - BUY 支出
+  const pnlPct = buyFromAmount > 0 ? (pnl / buyFromAmount) * 100 : 0;
   const holdMin = buyTrade ? Math.floor((now - buyTrade.created_at) / 60000) : 0;
 
+  // 1. 生成独立 SELL 记录（Web3 swap 标准字段齐全）
   (db.prepare(`INSERT INTO sim_trades (
-    trade_id, parent_trade_id, trade_type, strategy, chain_id, contract_address, symbol,
-    side, is_simulated, from_token, from_amount, to_token, to_amount, price,
-    status, pnl, pnl_percent, holding_duration_minutes, created_at, updated_at, closed_at
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, 'SELL', 1, ?, ?, ?, ?, ?, 'SUCCESS', ?, ?, ?, ?, ?, ?)`)).run(
-    uuidv4(), order.parent_trade_id, buyTrade?.trade_type || 'triggered', buyTrade?.strategy || null,
-    order.chain_id, order.contract_address, order.symbol,
-    buyTrade?.to_token || null, order.quantity, buyTrade?.from_token || null, sellAmount.toString(),
-    currentPrice.toString(),
-    pnl.toFixed(6), pnlPct, holdMin, now, now, now
+    trade_id, parent_trade_id, trade_type, strategy, chain_id, dex, contract_address, symbol,
+    side, is_simulated,
+    from_token, from_amount, from_contract,
+    to_token, to_amount, to_contract,
+    price, price_impact, gas_fee, gas_token,
+    trigger_reason,
+    status, pnl, pnl_percent, holding_duration_minutes,
+    created_at, updated_at, closed_at
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'SELL', 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SUCCESS', ?, ?, ?, ?, ?, ?)`)).run(
+    uuidv4(),
+    order.parent_trade_id,
+    buyTrade?.trade_type || 'triggered',
+    buyTrade?.strategy || null,
+    order.chain_id,
+    buyTrade?.dex || null,
+    order.contract_address,
+    order.symbol,
+    buyTrade?.to_token || null,       // from_token: 卖出的代币（BUY 时获得的）
+    sellQty.toString(),              // from_amount
+    buyTrade?.to_contract || null,    // from_contract
+    buyTrade?.from_token || null,     // to_token: 获得的代币（BUY 时支付的）
+    sellToAmount.toFixed(6),         // to_amount
+    buyTrade?.from_contract || null,  // to_contract
+    currentPrice.toString(),         // price
+    null, null, null,                // price_impact, gas_fee, gas_token
+    `triggered:${order.order_type}`, // trigger_reason
+    pnl.toFixed(6),
+    pnlPct,
+    holdMin,
+    now, now, now
   );
 
+  // 2. 关闭原 BUY 记录（只改状态，不改原始数据）
   if (buyTrade) {
-    (db.prepare(`UPDATE sim_trades SET status = 'SUCCESS', closed_at = ?, updated_at = ?, pnl = ?, pnl_percent = ?, holding_duration_minutes = ? WHERE trade_id = ?`)).run(now, now, pnl.toFixed(6), pnlPct, holdMin, order.parent_trade_id);
+    (db.prepare(`UPDATE sim_trades SET status = 'CLOSED', closed_at = ?, updated_at = ? WHERE trade_id = ?`)).run(now, now, order.parent_trade_id);
     const entryAmount = parseFloat(buyTrade.from_amount || '0');
     if (entryAmount > 0) releaseBudget(entryAmount);
   }
 
+  // 3. 更新 portfolio 统计
   const isWin = pnl > 0;
-  (db.prepare(`UPDATE portfolio_state SET winning_trades = winning_trades + ?, losing_trades = losing_trades + ?, total_pnl = CAST(total_pnl AS REAL) + ?, position_count = (SELECT COUNT(*) FROM sim_trades WHERE side = 'BUY' AND status = 'SUCCESS'), updated_at = ? WHERE portfolio_id = 'main'`)).run(isWin ? 1 : 0, isWin ? 0 : 1, pnl, now);
-  console.log(`[Swap] SELL ${order.order_type}: ${order.symbol} | PnL: $${pnl.toFixed(2)} (${pnlPct.toFixed(2)}%)`);
+  (db.prepare(`UPDATE portfolio_state SET winning_trades = winning_trades + ?, losing_trades = losing_trades + ?, total_pnl = CAST(total_pnl AS REAL) + ?, position_count = MAX(0, position_count - 1), updated_at = ? WHERE portfolio_id = 'main'`)).run(isWin ? 1 : 0, isWin ? 0 : 1, pnl, now);
+  console.log(`[Swap] SELL ${order.order_type}: ${order.symbol} | ${sellQty} → ${sellToAmount.toFixed(4)} | PnL: $${pnl.toFixed(2)} (${pnlPct.toFixed(2)}%)`);
 }
 
 // ==================== 手动平仓 ====================
 
-export function closePosition(trade: any, exitPrice: number, exitReason: string): void {
+/**
+ * 关闭持仓：按实盘标准生成独立 SELL 记录
+ * 
+ * 核心原则：
+ * 1. SELL 记录是完整的独立 swap 记录，所有 Web3 swap 字段必须齐全
+ * 2. BUY 记录只更新状态为 CLOSED，不修改原始数据
+ * 3. PnL 等盈亏数据只记录在 SELL 记录上
+ * 4. 与 executePendingOrder 生成的 SELL 记录结构完全一致
+ */
+export function closePosition(trade: any, exitPrice: number, exitReason: string): any {
   ensureSimTables();
   const now = Date.now();
-  const entryPrice = parseFloat(trade.price);
-  const pnl = (exitPrice - entryPrice) / entryPrice * parseFloat(trade.from_amount || '100');
-  const pnlPct = ((exitPrice - entryPrice) / entryPrice) * 100;
-  const holdMin = Math.floor((now - trade.created_at) / 60000);
-  const exitQty = trade.to_amount;
-  const exitAmount = exitQty ? (parseFloat(exitQty) * exitPrice).toString() : null;
+  const buyFromAmount = parseFloat(trade.from_amount || '0');  // BUY 时支付的金额（如 100 USDT）
+  const buyToAmount = parseFloat(trade.to_amount || '0');       // BUY 时获得的代币数量
 
+  // PnL 计算（实盘方式：SELL 收入 - BUY 支出）
+  const sellFromAmount = buyToAmount;                          // SELL 输入 = BUY 获得的代币数量
+  const sellToAmount = buyToAmount * exitPrice;                // SELL 输出 = 代币数量 × 卖出价格
+  const pnl = sellToAmount - buyFromAmount;                    // 盈亏 = SELL 收入 - BUY 支出
+  const pnlPct = buyFromAmount > 0 ? (pnl / buyFromAmount) * 100 : 0;
+  const holdMin = Math.floor((now - (trade.created_at || now)) / 60000);
+
+  // 1. 生成独立 SELL 记录（Web3 swap 标准字段齐全）
+  const sellTradeId = uuidv4();
   (db.prepare(`INSERT INTO sim_trades (
-    trade_id, parent_trade_id, trade_type, strategy, chain_id, contract_address, symbol,
-    side, is_simulated, from_token, from_amount, to_token, to_amount, price,
-    status, pnl, pnl_percent, holding_duration_minutes, trigger_reason, created_at, updated_at, closed_at
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, 'SELL', 1, ?, ?, ?, ?, ?, 'SUCCESS', ?, ?, ?, ?, ?, ?, ?)`)).run(
-    uuidv4(), trade.trade_id, trade.trade_type, trade.strategy,
-    trade.chain_id, trade.contract_address, trade.symbol,
-    trade.to_token || null, exitQty, trade.from_token || null, exitAmount,
-    exitPrice.toString(),
-    pnl.toFixed(6), pnlPct, holdMin, exitReason, now, now, now
+    trade_id, parent_trade_id, trade_type, strategy, chain_id, dex, contract_address, symbol,
+    side, is_simulated,
+    from_token, from_amount, from_contract,
+    to_token, to_amount, to_contract,
+    price, price_impact, gas_fee, gas_token,
+    trigger_reason,
+    status, pnl, pnl_percent, holding_duration_minutes,
+    created_at, updated_at, closed_at
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'SELL', 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SUCCESS', ?, ?, ?, ?, ?, ?)`)).run(
+    sellTradeId,
+    trade.trade_id,               // parent_trade_id → 关联原 BUY
+    trade.trade_type,
+    trade.strategy,
+    trade.chain_id,
+    trade.dex || null,
+    trade.contract_address,
+    trade.symbol,
+    trade.to_token || null,       // from_token: 卖出的代币（BUY 时获得的）
+    sellFromAmount.toString(),    // from_amount: 卖出数量
+    trade.to_contract || null,    // from_contract
+    trade.from_token || null,     // to_token: 获得的代币（BUY 时支付的）
+    sellToAmount.toFixed(6),      // to_amount: 获得数量
+    trade.from_contract || null,  // to_contract
+    exitPrice.toString(),         // price: 成交价格
+    null,                         // price_impact（手动平仓无）
+    null,                         // gas_fee（模拟盘无）
+    getPaymentToken(trade.chain_id), // gas_token
+    exitReason,
+    pnl.toFixed(6),
+    pnlPct,
+    holdMin,
+    now, now, now
   );
 
-  (db.prepare(`UPDATE sim_trades SET status = 'SUCCESS', closed_at = ?, updated_at = ?, pnl = ?, pnl_percent = ?, holding_duration_minutes = ? WHERE trade_id = ?`)).run(now, now, pnl.toFixed(6), pnlPct, holdMin, trade.trade_id);
+  // 2. 关闭原 BUY 记录（只改状态，不改原始数据）
+  (db.prepare(`UPDATE sim_trades SET status = 'CLOSED', closed_at = ?, updated_at = ? WHERE trade_id = ?`)).run(now, now, trade.trade_id);
+
+  // 3. 取消关联挂单
   (db.prepare(`UPDATE sim_pending_orders SET status = 'CANCELED' WHERE parent_trade_id = ? AND status = 'PENDING'`)).run(trade.trade_id);
 
-  const entryAmount = parseFloat(trade.from_amount || '0');
-  if (entryAmount > 0) releaseBudget(entryAmount);
+  // 4. 释放预算
+  if (buyFromAmount > 0) releaseBudget(buyFromAmount);
 
+  // 5. 更新 portfolio 统计
   const isWin = pnl > 0;
-  (db.prepare(`UPDATE portfolio_state SET winning_trades = winning_trades + ?, losing_trades = losing_trades + ?, total_pnl = CAST(total_pnl AS REAL) + ?, position_count = (SELECT COUNT(*) FROM sim_trades WHERE side = 'BUY' AND status = 'SUCCESS'), updated_at = ? WHERE portfolio_id = 'main'`)).run(isWin ? 1 : 0, isWin ? 0 : 1, pnl, now);
-  console.log(`[Swap] SELL(manual): ${trade.symbol} | PnL: $${pnl.toFixed(2)}`);
+  (db.prepare(`UPDATE portfolio_state SET winning_trades = winning_trades + ?, losing_trades = losing_trades + ?, total_pnl = CAST(total_pnl AS REAL) + ?, position_count = MAX(0, position_count - 1), updated_at = ? WHERE portfolio_id = 'main'`)).run(isWin ? 1 : 0, isWin ? 0 : 1, pnl, now);
+
+  console.log(`[Swap] SELL(close): ${trade.symbol} | ${sellFromAmount} ${trade.to_token} → ${sellToAmount.toFixed(4)} ${trade.from_token} | PnL: $${pnl.toFixed(2)} (${pnlPct.toFixed(2)}%)`);
+  return {
+    success: true,
+    trade_id: sellTradeId,
+    parent_trade_id: trade.trade_id,
+    sell: {
+      from_token: trade.to_token,
+      from_amount: sellFromAmount.toString(),
+      to_token: trade.from_token,
+      to_amount: sellToAmount.toFixed(6),
+      price: exitPrice.toString(),
+    },
+    buy: {
+      from_token: trade.from_token,
+      from_amount: trade.from_amount,
+      to_token: trade.to_token,
+      to_amount: trade.to_amount,
+      price: trade.price,
+    },
+    pnl: pnl.toFixed(6),
+    pnl_percent: pnlPct,
+    holding_duration_minutes: holdMin,
+    reason: exitReason,
+  };
 }
 
 // ==================== 兼容旧接口 ====================
