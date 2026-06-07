@@ -142,29 +142,61 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  // SSE + 初始加载
+  // SSE + 初始加载 + 自动重连 + 轮询兜底
   useEffect(() => {
     loadStats();
     loadTokens();
 
     let es: EventSource | null = null;
-    try {
-      es = createNewTokenSSE();
-      es.onopen = () => setSseConnected(true);
-      es.onerror = () => setSseConnected(false);
-      es.onmessage = (e) => {
-        try {
-          JSON.parse(e.data);
-          // SSE 新币推送时，如果无筛选条件则刷新列表
-          if (Object.keys(filters).length === 0) {
-            loadTokens(pagination.page, pagination.pageSize, filters);
-          }
-          loadStats();
-        } catch { /* ignore */ }
-      };
-    } catch { /* SSE 不可用 */ }
+    let retryDelay = 2000;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+    let closed = false;
 
-    return () => { es?.close(); };
+    const connect = () => {
+      if (closed) return;
+      try {
+        es = createNewTokenSSE();
+        es.onopen = () => {
+          setSseConnected(true);
+          retryDelay = 2000; // 连接成功，重置退避
+        };
+        es.onerror = () => {
+          setSseConnected(false);
+          es?.close();
+          // 指数退避重连：2s → 4s → 8s → 16s，最大 30s
+          if (!closed) {
+            retryTimer = setTimeout(() => {
+              connect();
+            }, Math.min(retryDelay, 30000));
+            retryDelay = Math.min(retryDelay * 2, 30000);
+          }
+        };
+        es.onmessage = (e) => {
+          try {
+            JSON.parse(e.data);
+            if (Object.keys(filters).length === 0) {
+              loadTokens(pagination.page, pagination.pageSize, filters);
+            }
+            loadStats();
+          } catch { /* ignore */ }
+        };
+      } catch { /* SSE 不可用 */ }
+    };
+
+    connect();
+
+    // 兜底轮询：每 30 秒刷新统计数据
+    pollTimer = setInterval(() => {
+      loadStats();
+    }, 30000);
+
+    return () => {
+      closed = true;
+      es?.close();
+      if (retryTimer) clearTimeout(retryTimer);
+      if (pollTimer) clearInterval(pollTimer);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
