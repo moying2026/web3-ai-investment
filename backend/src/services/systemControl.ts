@@ -55,25 +55,46 @@ export function initSystemControl(): void {
 
 // 注册模块
 export function registerModule(id: string, name: string, intervalMs: number): void {
-  // 初始化内存状态
-  moduleStates.set(id, {
-    running: true,
-    intervalId: null,
-    lastRun: null,
-    lastSuccess: null,
-    lastError: null,
-    successCount: 0,
-    failCount: 0,
-    metrics: {},
-  });
+  // 查询数据库中是否已存在该模块
+  const existing = db.prepare('SELECT running, success_count, fail_count, last_run, last_success, last_error, metrics_json FROM system_modules WHERE id = ?').get(id) as any;
 
-  // 更新数据库（使用 INSERT OR REPLACE 确保更新间隔）
-  db.prepare(`
-    INSERT OR REPLACE INTO system_modules (id, name, running, interval_ms, success_count, fail_count)
-    VALUES (?, ?, 1, ?, 0, 0)
-  `).run(id, name, intervalMs);
-
-  console.log(`[System] 注册模块: ${id} (${name}) interval=${intervalMs}ms`);
+  if (existing) {
+    // 已存在：保留数据库中的 running 状态和统计数据
+    const savedRunning = existing.running === 1;
+    moduleStates.set(id, {
+      running: savedRunning,
+      intervalId: null,
+      lastRun: existing.last_run || null,
+      lastSuccess: existing.last_success || null,
+      lastError: existing.last_error || null,
+      successCount: existing.success_count || 0,
+      failCount: existing.fail_count || 0,
+      metrics: existing.metrics_json ? JSON.parse(existing.metrics_json) : {},
+    });
+    // 只更新 name 和 interval_ms，不覆盖 running
+    db.prepare(`
+      UPDATE system_modules SET name = ?, interval_ms = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).run(name, intervalMs, id);
+    console.log(`[System] 重新注册模块: ${id} (${name}) interval=${intervalMs}ms, 保留状态: running=${savedRunning}`);
+  } else {
+    // 首次注册：默认 running=1
+    moduleStates.set(id, {
+      running: true,
+      intervalId: null,
+      lastRun: null,
+      lastSuccess: null,
+      lastError: null,
+      successCount: 0,
+      failCount: 0,
+      metrics: {},
+    });
+    db.prepare(`
+      INSERT INTO system_modules (id, name, running, interval_ms, success_count, fail_count)
+      VALUES (?, ?, 1, ?, 0, 0)
+    `).run(id, name, intervalMs);
+    console.log(`[System] 首次注册模块: ${id} (${name}) interval=${intervalMs}ms`);
+  }
 }
 
 // 记录运行结果
