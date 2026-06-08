@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Row, Col, Card, Statistic, Tag, Table, Badge, Switch, Space, message, Spin, Select, Input, InputNumber, Button, Form, Segmented, Progress, Tabs } from 'antd';
+import { Row, Col, Card, Statistic, Tag, Table, Badge, Switch, Space, message, Spin, Select, Input, InputNumber, Button, Form, Segmented, Progress, Tabs, Divider, Alert, Descriptions } from 'antd';
 import {
   WalletOutlined,
   FundOutlined,
@@ -9,9 +9,8 @@ import {
   ClearOutlined,
 } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
-import { useNavigate } from 'react-router-dom';
 import type { Token, Stats } from '../../types';
-import { tokenApi, statsApi, simApi, createNewTokenSSE } from '../../services/api';
+import { tokenApi, statsApi, simApi, auditApi, dynamicApi, tokenAnalyzerApi, issuerRiskApi, createNewTokenSSE } from '../../services/api';
 import { formatPrice, formatVolume, formatSupply, formatPercent } from '../../utils/format';
 
 // 筛选参数类型
@@ -61,8 +60,295 @@ const TokenIcon: React.FC<{
   );
 };
 
+// 代币快速查看组件（嵌入Tab4）
+const TokenQuickView: React.FC<{ chain: string; address: string }> = ({ chain, address }) => {
+  const [token, setToken] = useState<Token | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [auditData, setAuditData] = useState<any>(null);
+  const [dynamicData, setDynamicData] = useState<any>(null);
+  const [agentScore, setAgentScore] = useState<any>(null);
+  const [similarData, setSimilarData] = useState<any>(null);
+  const [addressRisk, setAddressRisk] = useState<any>(null);
+  const [issuerRisk, setIssuerRisk] = useState<any>(null);
+
+  useEffect(() => {
+    setLoading(true);
+    setToken(null);
+    setAuditData(null);
+    setDynamicData(null);
+    setAgentScore(null);
+    setSimilarData(null);
+    setAddressRisk(null);
+    setIssuerRisk(null);
+
+    Promise.all([
+      tokenApi.getDetail(chain, address).catch(() => null),
+      auditApi.get(chain, address).catch(() => null),
+      dynamicApi.get(chain, address).catch(() => null),
+      tokenAnalyzerApi.getAgentScore(chain, address).catch(() => null),
+      tokenAnalyzerApi.getSimilar(chain, address).catch(() => null),
+      tokenAnalyzerApi.getAddressRisk(chain, address).catch(() => null),
+    ]).then(([tokenData, audit, dynamic, score, similar, addrRisk]) => {
+      if (tokenData) setToken(tokenData as any);
+      setAuditData(audit);
+      setDynamicData(dynamic);
+      setAgentScore(score);
+      setSimilarData(similar);
+      setAddressRisk(addrRisk);
+      // 加载发行方风险
+      const creator = (tokenData as any)?.creator_address;
+      if (creator) {
+        issuerRiskApi.getRisk(creator).then(data => setIssuerRisk(data)).catch(() => {});
+      }
+    }).finally(() => setLoading(false));
+  }, [chain, address]);
+
+  if (loading) return <Spin size="large" style={{ display: 'block', margin: '60px auto' }} />;
+  if (!token) return <div style={{ textAlign: 'center', padding: 40, color: '#8c8c8c' }}>代币未找到</div>;
+
+  const t = token as any;
+  const price = parseFloat(t.price_latest) || 0;
+  const chainMap: Record<string, string> = { '56': 'BSC', 'CT_501': 'SOL', '1': 'ETH', '8453': 'Base' };
+
+  const parseRisk = () => {
+    try {
+      if (!t.audit_info) return { label: '未知', color: 'default' };
+      const info = JSON.parse(t.audit_info);
+      const m: Record<number, { label: string; color: string }> = { 0: { label: '低风险', color: 'green' }, 1: { label: '低风险', color: 'green' }, 2: { label: '中风险', color: 'orange' }, 3: { label: '高风险', color: 'red' } };
+      return m[info.riskLevel] ?? { label: '未知', color: 'default' };
+    } catch { return { label: '未知', color: 'default' }; }
+  };
+
+  const parseTags = (): string[] => {
+    try {
+      if (!t.token_tag) return [];
+      const obj = JSON.parse(t.token_tag);
+      const tags: string[] = [];
+      Object.values(obj).forEach((arr: any) => { if (Array.isArray(arr)) arr.forEach((item: any) => tags.push(item.tagName)); });
+      return tags;
+    } catch { return []; }
+  };
+
+  const risk = parseRisk();
+  const tags = parseTags();
+  const score = agentScore?.score || 0;
+
+  return (
+    <div style={{ fontSize: 12 }}>
+      {/* 顶部：代币名称 + 价格 */}
+      <div style={{ marginBottom: 8 }}>
+        <Space size={4}>
+          <span style={{ fontWeight: 'bold', fontSize: 14 }}>{t.symbol}</span>
+          <Tag>{chainMap[t.chain_id] || t.chain_id}</Tag>
+          <Tag color={risk.color}>{risk.label}</Tag>
+        </Space>
+        <div style={{ marginTop: 4 }}>
+          <span style={{ fontSize: 16, fontWeight: 'bold' }}>{formatPrice(price)}</span>
+          <span style={{ color: parseFloat(t.percent_change_24h) >= 0 ? '#52c41a' : '#ff4d4f', marginLeft: 8, fontSize: 12 }}>
+            {formatPercent(parseFloat(t.percent_change_24h) || 0)}
+          </span>
+        </div>
+      </div>
+
+      {/* 标签 */}
+      {tags.length > 0 && (
+        <div style={{ marginBottom: 8 }}>
+          {tags.slice(0, 5).map(tag => <Tag key={tag} style={{ fontSize: 11 }}>{tag}</Tag>)}
+        </div>
+      )}
+
+      {/* 综合评分 + 雷达图 */}
+      {agentScore && (
+        <Card size="small" bodyStyle={{ padding: '8px' }} style={{ marginBottom: 8 }}>
+          <div style={{ fontWeight: 'bold', marginBottom: 4 }}>🤖 综合评分</div>
+          <Row gutter={8} align="middle">
+            <Col span={8} style={{ textAlign: 'center' }}>
+              <Progress
+                type="circle"
+                percent={score}
+                strokeColor={score >= 70 ? '#52c41a' : score >= 40 ? '#faad14' : '#ff4d4f'}
+                format={(pct) => `${pct}`}
+                size={70}
+              />
+              <div style={{ marginTop: 4 }}>
+                {agentScore.recommendation === 'BUY' ? <Tag color="green">买入</Tag> :
+                 agentScore.recommendation === 'HOLD' ? <Tag color="blue">持有</Tag> :
+                 agentScore.recommendation === 'WATCH' ? <Tag color="orange">观望</Tag> :
+                 <Tag color="red">回避</Tag>}
+              </div>
+              <div style={{ fontSize: 11, color: '#8c8c8c' }}>置信度: {((agentScore.confidence || 0) * 100).toFixed(0)}%</div>
+            </Col>
+            <Col span={16}>
+              {agentScore.details?.scores && (
+                <ReactECharts
+                  option={{
+                    radar: {
+                      indicator: [
+                        { name: '合约安全', max: 20 },
+                        { name: '市场热度', max: 15 },
+                        { name: '发行方信誉', max: 15 },
+                        { name: '链上数据', max: 25 },
+                        { name: '流动性', max: 25 },
+                      ],
+                      radius: '60%',
+                    },
+                    series: [{
+                      type: 'radar' as const,
+                      data: [{
+                        value: [
+                          agentScore.details.scores.risk || 0,
+                          agentScore.details.scores.market || 0,
+                          agentScore.details.scores.issuer || 0,
+                          agentScore.details.scores.onchain || 0,
+                          agentScore.details.scores.liquidity || 0,
+                        ],
+                        areaStyle: { opacity: 0.2 },
+                        lineStyle: { color: '#1890ff' },
+                        itemStyle: { color: '#1890ff' },
+                      }],
+                    }],
+                  }}
+                  style={{ height: 140 }}
+                />
+              )}
+            </Col>
+          </Row>
+          {/* 风险标记 & 亮点 */}
+          {(agentScore.riskFlags?.length > 0 || agentScore.highlights?.length > 0) && (
+            <>
+              <Divider style={{ margin: '8px 0' }} />
+              <Row gutter={8}>
+                {agentScore.riskFlags?.length > 0 && (
+                  <Col span={12}>
+                    <div style={{ fontWeight: 'bold', color: '#ff4d4f', marginBottom: 2 }}>⚠️ 风险</div>
+                    {agentScore.riskFlags.map((f: string, i: number) => (
+                      <div key={i} style={{ fontSize: 11, color: '#ff4d4f' }}>{f}</div>
+                    ))}
+                  </Col>
+                )}
+                {agentScore.highlights?.length > 0 && (
+                  <Col span={12}>
+                    <div style={{ fontWeight: 'bold', color: '#52c41a', marginBottom: 2 }}>✅ 亮点</div>
+                    {agentScore.highlights.map((h: string, i: number) => (
+                      <div key={i} style={{ fontSize: 11, color: '#52c41a' }}>{h}</div>
+                    ))}
+                  </Col>
+                )}
+              </Row>
+            </>
+          )}
+        </Card>
+      )}
+
+      {/* 合约审计 */}
+      {auditData && (
+        <Card size="small" bodyStyle={{ padding: '8px' }} style={{ marginBottom: 8 }}>
+          <div style={{ fontWeight: 'bold', marginBottom: 4 }}>🔒 合约审计</div>
+          <Descriptions column={1} size="small">
+            <Descriptions.Item label="风险等级">
+              <Tag color={auditData.risk_level === 'high' ? 'red' : auditData.risk_level === 'medium' ? 'orange' : 'green'}>
+                {auditData.risk_level || '-'}
+              </Tag>
+            </Descriptions.Item>
+            <Descriptions.Item label="买入税">{auditData.buy_tax != null ? `${auditData.buy_tax}%` : '-'}</Descriptions.Item>
+            <Descriptions.Item label="卖出税">{auditData.sell_tax != null ? `${auditData.sell_tax}%` : '-'}</Descriptions.Item>
+            <Descriptions.Item label="蜜罐">{auditData.is_honeypot ? '⚠️ 疑似' : '✅ 安全'}</Descriptions.Item>
+            <Descriptions.Item label="合约验证">{auditData.is_verified ? '✅ 已验证' : '❌ 未验证'}</Descriptions.Item>
+          </Descriptions>
+        </Card>
+      )}
+
+      {/* Smart Money / Dev 持仓 */}
+      {dynamicData && (
+        <Card size="small" bodyStyle={{ padding: '8px' }} style={{ marginBottom: 8 }}>
+          <div style={{ fontWeight: 'bold', marginBottom: 4 }}>🧠 Smart Money</div>
+          <Descriptions column={1} size="small">
+            <Descriptions.Item label="SM持仓">{dynamicData.smart_money_holding_percent != null ? `${dynamicData.smart_money_holding_percent.toFixed(2)}%` : '-'}</Descriptions.Item>
+            <Descriptions.Item label="Dev持仓">{dynamicData.dev_holding_percent != null ? `${dynamicData.dev_holding_percent.toFixed(2)}%` : '-'}</Descriptions.Item>
+            <Descriptions.Item label="前10占比">{dynamicData.holders_top10_percent != null ? `${parseFloat(dynamicData.holders_top10_percent).toFixed(1)}%` : '-'}</Descriptions.Item>
+            <Descriptions.Item label="24h交易">{dynamicData.count_24h ?? '-'}</Descriptions.Item>
+          </Descriptions>
+        </Card>
+      )}
+
+      {/* 同名检测 */}
+      {similarData && (
+        <Card size="small" bodyStyle={{ padding: '8px' }} style={{ marginBottom: 8 }}>
+          <div style={{ fontWeight: 'bold', marginBottom: 4 }}>🔍 同名检测</div>
+          <Row gutter={8}>
+            <Col span={8}><Statistic title="同名" value={similarData.duplicateCount ?? 0} valueStyle={{ fontSize: 16 }} /></Col>
+            <Col span={8}><Statistic title="跨链" value={similarData.crossChain?.length ?? 0} valueStyle={{ fontSize: 16 }} /></Col>
+            <Col span={8}>
+              <div style={{ color: '#8c8c8c', fontSize: 11 }}>风险</div>
+              <Tag color={similarData.riskLevel === 'high' ? 'red' : similarData.riskLevel === 'medium' ? 'orange' : 'green'}>
+                {similarData.riskLevel === 'high' ? '高' : similarData.riskLevel === 'medium' ? '中' : '低'}
+              </Tag>
+            </Col>
+          </Row>
+          {similarData.riskReasons?.length > 0 && (
+            <Alert message={similarData.riskReasons.join('；')} type={similarData.riskLevel === 'high' ? 'error' : 'warning'} showIcon style={{ marginTop: 4, fontSize: 11 }} />
+          )}
+        </Card>
+      )}
+
+      {/* 地址风险 */}
+      {addressRisk && (
+        <Card size="small" bodyStyle={{ padding: '8px' }} style={{ marginBottom: 8 }}>
+          <div style={{ fontWeight: 'bold', marginBottom: 4 }}>🏦 地址风险</div>
+          <Row gutter={8}>
+            <Col span={8}>
+              <div style={{ color: '#8c8c8c', fontSize: 11 }}>评分</div>
+              <Progress
+                percent={Math.max(0, Math.min(100, ((addressRisk.score || 0) + 10) * 4))}
+                strokeColor={(addressRisk.score || 0) >= 8 ? '#52c41a' : (addressRisk.score || 0) >= 4 ? '#faad14' : '#ff4d4f'}
+                format={() => `${addressRisk.score ?? 0}`}
+                size="small"
+              />
+            </Col>
+            <Col span={8}>
+              <div style={{ color: '#8c8c8c', fontSize: 11 }}>风险</div>
+              <span style={{ color: '#ff4d4f', fontWeight: 'bold' }}>{addressRisk.riskFlags?.length ?? 0}</span>
+            </Col>
+            <Col span={8}>
+              <div style={{ color: '#8c8c8c', fontSize: 11 }}>亮点</div>
+              <span style={{ color: '#52c41a', fontWeight: 'bold' }}>{addressRisk.highlights?.length ?? 0}</span>
+            </Col>
+          </Row>
+        </Card>
+      )}
+
+      {/* 发行方风险 */}
+      {issuerRisk && (
+        <Card size="small" bodyStyle={{ padding: '8px' }}>
+          <div style={{ fontWeight: 'bold', marginBottom: 4 }}>📊 发行方风险</div>
+          <Row gutter={8}>
+            <Col span={8}>
+              <div style={{ color: '#8c8c8c', fontSize: 11 }}>等级</div>
+              <Tag color={issuerRisk.riskLevel === 'high' ? 'red' : issuerRisk.riskLevel === 'medium' ? 'orange' : 'green'}>
+                {issuerRisk.riskLevel === 'high' ? '高' : issuerRisk.riskLevel === 'medium' ? '中' : '低'}
+              </Tag>
+            </Col>
+            <Col span={8}><Statistic title="代币数" value={issuerRisk.totalTokens ?? 0} valueStyle={{ fontSize: 16 }} /></Col>
+            <Col span={8}>
+              <div style={{ color: '#8c8c8c', fontSize: 11 }}>迁移率</div>
+              <Progress
+                percent={parseFloat(((issuerRisk.migrationRate ?? 0) * 100).toFixed(1))}
+                strokeColor={(issuerRisk.migrationRate ?? 0) >= 0.5 ? '#52c41a' : '#faad14'}
+                format={(pct) => `${pct}%`}
+                size="small"
+              />
+            </Col>
+          </Row>
+          {issuerRisk.riskReasons?.length > 0 && (
+            <Alert message={issuerRisk.riskReasons.join('；')} type={issuerRisk.riskLevel === 'high' ? 'error' : 'warning'} showIcon style={{ marginTop: 4, fontSize: 11 }} />
+          )}
+        </Card>
+      )}
+    </div>
+  );
+};
+
 const Dashboard: React.FC = () => {
-  const navigate = useNavigate();
   const [autoMode, setAutoMode] = useState(false);
   const [tokens, setTokens] = useState<Token[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
@@ -75,6 +361,8 @@ const Dashboard: React.FC = () => {
   const [sortOrder, setSortOrder] = useState<string>('desc');
   const [coinType, setCoinType] = useState<string>('all');
   const [pnlCurveData, setPnlCurveData] = useState<{ date: string; value: number }[]>([]);
+  const [selectedToken, setSelectedToken] = useState<{ chain: string; address: string; symbol: string } | null>(null);
+  const [activeTab, setActiveTab] = useState<string>('Tab1');
 
   // 加载统计数据
   const loadStats = useCallback(async () => {
@@ -668,7 +956,10 @@ const Dashboard: React.FC = () => {
                   onChange: (page, pageSize) => loadTokens(page, pageSize, filters),
                 }}
                 onRow={(record) => ({
-                  onClick: () => navigate(`/token/${record.chain_id}/${record.contract_address}`),
+                  onClick: () => {
+                    setSelectedToken({ chain: record.chain_id, address: record.contract_address, symbol: record.symbol });
+                    setActiveTab('Tab4');
+                  },
                   style: { cursor: 'pointer' },
                 })}
                 scroll={{ x: 1300, y: 420 }}
@@ -680,11 +971,32 @@ const Dashboard: React.FC = () => {
           <Card size="small" bodyStyle={{ padding: '8px 12px' }} style={{ height: '100%' }}>
             <Tabs
               size="small"
-              items={['Tab1', 'Tab2', 'Tab3', 'Tab4'].map(label => ({
-                key: label,
-                label,
-                children: <div style={{ padding: '8px 0', color: '#8c8c8c', textAlign: 'center' }}>待陈哥指定内容</div>,
-              }))}
+              activeKey={activeTab}
+              onChange={setActiveTab}
+              items={[
+                {
+                  key: 'Tab1',
+                  label: 'Tab1',
+                  children: <div style={{ padding: '8px 0', color: '#8c8c8c', textAlign: 'center' }}>待陈哥指定内容</div>,
+                },
+                {
+                  key: 'Tab2',
+                  label: 'Tab2',
+                  children: <div style={{ padding: '8px 0', color: '#8c8c8c', textAlign: 'center' }}>待陈哥指定内容</div>,
+                },
+                {
+                  key: 'Tab3',
+                  label: 'Tab3',
+                  children: <div style={{ padding: '8px 0', color: '#8c8c8c', textAlign: 'center' }}>待陈哥指定内容</div>,
+                },
+                {
+                  key: 'Tab4',
+                  label: `代币详情${selectedToken ? ` (${selectedToken.symbol})` : ''}`,
+                  children: selectedToken
+                    ? <TokenQuickView chain={selectedToken.chain} address={selectedToken.address} />
+                    : <div style={{ padding: '40px 0', color: '#8c8c8c', textAlign: 'center' }}>请点击左侧代币查看详情</div>,
+                },
+              ]}
             />
           </Card>
         </Col>
