@@ -6,7 +6,6 @@ import {
   SwapOutlined,
   ControlOutlined,
   UserOutlined,
-  LineChartOutlined,
   WalletOutlined,
   ThunderboltOutlined,
   SettingOutlined,
@@ -35,7 +34,6 @@ const AppLayout: React.FC = () => {
 
   const menuItems = [
     { key: '/', icon: <DashboardOutlined />, label: '实时监控' },
-    { key: '/token', icon: <LineChartOutlined />, label: '代币详情' },
     { key: '/trading', icon: <SwapOutlined />, label: '交易' },
     { key: '/rules', icon: <ControlOutlined />, label: '规则引擎' },
     { key: '/issuer', icon: <UserOutlined />, label: '发行方画像' },
@@ -44,10 +42,7 @@ const AppLayout: React.FC = () => {
   ];
 
   const handleMenuClick = ({ key }: { key: string }) => {
-    if (key === '/token') {
-      // 代币详情无参数时跳转到监控页
-      navigate('/');
-    } else if (key === '/issuer') {
+    if (key === '/issuer') {
       // 发行方画像无参数时跳转到监控页
       navigate('/');
     } else {
