@@ -649,7 +649,7 @@ const Dashboard: React.FC = () => {
                 <SyncOutlined spin={loading} style={{ cursor: 'pointer' }} onClick={() => { loadTokens(pagination.page, pagination.pageSize, filters); loadStats(); }} />
               </Space>
             }
-            bodyStyle={{ padding: '4px 8px' }}
+            bodyStyle={{ padding: '2px 4px' }}
           >
             <Spin spinning={loading}>
               <Table
