@@ -619,7 +619,7 @@ const Dashboard: React.FC = () => {
                 </Form.Item>
               </Space>
             </Form.Item>
-            <Form.Item style={{ marginBottom: 0 }}>
+            <Form.Item style={{ marginBottom: 0, marginLeft: 'auto' }}>
               <Space size={4}>
                 <Button type="primary" size="small" icon={<FilterOutlined />} onClick={handleFilter}>查询</Button>
                 <Button size="small" icon={<ClearOutlined />} onClick={handleReset}>重置</Button>
