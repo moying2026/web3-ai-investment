@@ -656,6 +656,7 @@ const Dashboard: React.FC = () => {
                 columns={tokenColumns}
                 rowKey="id"
                 size="small"
+                className="ultra-compact-table"
                 onChange={handleTableChange}
                 pagination={{
                   current: pagination.page,
