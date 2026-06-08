@@ -670,7 +670,7 @@ const Dashboard: React.FC = () => {
                   onClick: () => navigate(`/token/${record.chain_id}/${record.contract_address}`),
                   style: { cursor: 'pointer' },
                 })}
-                scroll={{ x: 1300, y: 360 }}
+                scroll={{ x: 1300, y: 420 }}
               />
             </Spin>
           </Card>
