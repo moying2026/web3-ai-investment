@@ -507,15 +507,15 @@ const Dashboard: React.FC = () => {
       <Row gutter={16} style={{ marginBottom: 12 }}>
         <Col span={6}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {/* 上方三个统计卡片水平排列 */}
+            {/* 上方三个统计卡片水平排列，总宽度与下方AI辅助一致 */}
             <div style={{ display: 'flex', gap: 8 }}>
-              <Card size="small" bodyStyle={{ padding: '8px 10px', flex: 1 }}>
+              <Card size="small" style={{ flex: 1, minWidth: 0 }} bodyStyle={{ padding: '8px 10px' }}>
                 <Statistic title="代币" value={stats?.totalTokens ?? '-'} prefix={<WalletOutlined />} loading={!stats} valueStyle={{ fontSize: 18 }} />
               </Card>
-              <Card size="small" bodyStyle={{ padding: '8px 10px', flex: 1 }}>
+              <Card size="small" style={{ flex: 1, minWidth: 0 }} bodyStyle={{ padding: '8px 10px' }}>
                 <Statistic title="新增" value={stats?.todayNewTokens ?? '-'} prefix={<FundOutlined />} valueStyle={{ color: '#1890ff', fontSize: 18 }} loading={!stats} />
               </Card>
-              <Card size="small" bodyStyle={{ padding: '8px 10px', flex: 1 }}>
+              <Card size="small" style={{ flex: 1, minWidth: 0 }} bodyStyle={{ padding: '8px 10px' }}>
                 <Statistic title="话题" value={stats?.totalSocialTopics ?? '-'} prefix={<ThunderboltOutlined />} valueStyle={{ fontSize: 18 }} loading={!stats} />
               </Card>
             </div>
@@ -565,7 +565,7 @@ const Dashboard: React.FC = () => {
         bodyStyle={{ padding: '8px 12px' }}
       >
         <div style={{ fontSize: 10, whiteSpace: 'nowrap' }}>
-          <Form form={filterForm} layout="inline" size="small" style={{ flexWrap: 'nowrap', gap: '2px 4px' }}>
+          <Form form={filterForm} layout="inline" size="small" style={{ flexWrap: 'wrap', gap: '2px 4px' }}>
             <Form.Item label="所属链" name="chain" initialValue="all" style={{ marginBottom: 0 }}>
               <Select size="small" style={{ width: 80 }}>
                 <Select.Option value="all">全部</Select.Option>
