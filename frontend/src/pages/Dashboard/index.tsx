@@ -538,19 +538,6 @@ const Dashboard: React.FC = () => {
         </Col>
       </Row>
 
-      {/* 快速分类切换 */}
-      <div style={{ marginBottom: 16 }}>
-        <Segmented
-          value={coinType}
-          onChange={(val) => handleCoinTypeChange(val as string)}
-          options={[
-            { label: '全部', value: 'all' },
-            { label: '🆕 新币', value: 'new' },
-            { label: '🔥 热门', value: 'trending' },
-          ]}
-        />
-      </div>
-
       {/* 筛选区域 */}
       <Card
         size="small"
@@ -559,6 +546,17 @@ const Dashboard: React.FC = () => {
       >
         <div style={{ fontSize: 10, whiteSpace: 'nowrap' }}>
           <Form form={filterForm} layout="inline" size="small" style={{ flexWrap: 'wrap', gap: '2px 4px' }}>
+            <Form.Item style={{ marginBottom: 0 }}>
+              <Segmented
+                value={coinType}
+                onChange={(val) => handleCoinTypeChange(val as string)}
+                options={[
+                  { label: '全部', value: 'all' },
+                  { label: '🆕 新币', value: 'new' },
+                  { label: '🔥 热门', value: 'trending' },
+                ]}
+              />
+            </Form.Item>
             <Form.Item label="所属链" name="chain" initialValue="all" style={{ marginBottom: 0 }}>
               <Select size="small" style={{ width: 80 }}>
                 <Select.Option value="all">全部</Select.Option>
