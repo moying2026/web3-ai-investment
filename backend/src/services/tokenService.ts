@@ -571,10 +571,15 @@ export function getSocialTopics(params: {
 // 获取统计数据
 export function getStats(): any {
   const totalTokens = (db.prepare('SELECT COUNT(*) as c FROM tokens') as SqliteStatement).get() as any;
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  const todayStr = todayStart.toISOString();
-  const todayNewTokens = (db.prepare('SELECT COUNT(*) as c FROM tokens WHERE first_seen_at >= ?') as SqliteStatement).get(todayStr) as any;
+  // 计算北京时间（UTC+8）今天 00:00 对应的 UTC 时间，避免 UTC 8点才清零
+  const now = new Date();
+  const beijingOffset = 8 * 60 * 60 * 1000;
+  const beijingDate = new Date(now.getTime() + beijingOffset);
+  const beijingMidnightUTC = new Date(
+    Date.UTC(beijingDate.getUTCFullYear(), beijingDate.getUTCMonth(), beijingDate.getUTCDate()) - beijingOffset
+  );
+  const todayStartISO = beijingMidnightUTC.toISOString().replace('T', ' ').slice(0, 19);
+  const todayNewTokens = (db.prepare('SELECT COUNT(*) as c FROM tokens WHERE first_seen_at >= ?') as SqliteStatement).get(todayStartISO) as any;
   const totalSnapshots = (db.prepare('SELECT COUNT(*) as c FROM token_snapshots') as SqliteStatement).get() as any;
   const totalSocialTopics = (db.prepare('SELECT COUNT(*) as c FROM social_topics') as SqliteStatement).get() as any;
   const trackingActive = (db.prepare('SELECT COUNT(*) as c FROM tracking_plans WHERE executed = 0') as SqliteStatement).get() as any;
