@@ -407,9 +407,9 @@ const Dashboard: React.FC = () => {
     {
       title: '标签',
       key: 'tags',
-      width: 150,
+      width: 200,
       render: (_: any, record: Token) => (
-        <Space size={2} wrap>
+        <Space size={2} style={{ whiteSpace: 'nowrap' }}>
           {parseTags(record).slice(0, 3).map(tag => (
             <Tag key={tag} style={{ fontSize: 11 }}>{tag}</Tag>
           ))}
