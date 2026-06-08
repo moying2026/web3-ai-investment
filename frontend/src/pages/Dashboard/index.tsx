@@ -504,7 +504,7 @@ const Dashboard: React.FC = () => {
   return (
     <div>
       {/* 统计 + 收益曲线：左右布局 */}
-      <Row gutter={16} style={{ marginBottom: 12 }}>
+      <Row gutter={16} style={{ marginBottom: 4 }}>
         <Col span={6}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {/* 上方三个统计卡片水平排列，总宽度与下方AI辅助一致 */}
@@ -541,7 +541,7 @@ const Dashboard: React.FC = () => {
       {/* 筛选区域 */}
       <Card
         size="small"
-        style={{ marginBottom: 12 }}
+        style={{ marginBottom: 4 }}
         bodyStyle={{ padding: '4px 8px' }}
       >
         <div style={{ fontSize: 10, whiteSpace: 'nowrap', lineHeight: 1 }}>

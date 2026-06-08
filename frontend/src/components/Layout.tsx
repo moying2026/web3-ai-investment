@@ -107,7 +107,7 @@ const AppLayout: React.FC = () => {
       </Header>
 
       {/* 内容区域 */}
-      <Content style={{ padding: 24, height: 'calc(100vh - 64px)', overflow: 'auto' }}>
+      <Content style={{ padding: 8, height: 'calc(100vh - 64px)', overflow: 'auto' }}>
         <Outlet />
       </Content>
     </AntLayout>
