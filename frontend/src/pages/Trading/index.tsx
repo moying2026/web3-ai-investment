@@ -144,14 +144,29 @@ const ALL_COLUMNS: ColumnDef[] = [
     render: (v: string) => <Tag color={v === 'PENDING' ? 'processing' : 'success'}>{v === 'PENDING' ? '持仓' : '已平仓'}</Tag> },
   { key: 'price', title: '价格', width: 120, dataIndex: 'price', defaultVisible: true, sorter: true,
     render: (v: string) => formatPrice(v) },
-  { key: 'from_amount', title: '支付金额', width: 100, dataIndex: 'from_amount', defaultVisible: true, sorter: true,
-    render: (v: string | null) => v ? formatNumber(parseFloat(v), { prefix: '$' }) : '-' },
-  { key: 'to_amount', title: '获得数量', width: 100, dataIndex: 'to_amount', defaultVisible: true, sorter: true,
-    render: (v: string | null) => v ? parseFloat(v).toLocaleString() : '-' },
-  { key: 'from_token', title: '支付代币', width: 90, dataIndex: 'from_token', defaultVisible: true, sorter: true,
-    render: (v: string | null) => v || '-' },
-  { key: 'to_token', title: '获得代币', width: 90, dataIndex: 'to_token', defaultVisible: true, sorter: true,
-    render: (v: string | null) => v || '-' },
+  { key: 'swap_out', title: '转出', width: 160, dataIndex: 'from_amount', defaultVisible: true,
+    render: (_v: string | null, r: SimTrade) => {
+      const amount = r.from_amount;
+      const token = r.from_token;
+      if (!amount || !token) return '-';
+      const num = parseFloat(amount);
+      const display = num >= 1000 ? num.toLocaleString(undefined, { maximumFractionDigits: 2 }) : num.toPrecision(4);
+      return <span style={{ color: '#ff4d4f' }}>{display} {token}</span>;
+    }},
+  { key: 'swap_in', title: '转入', width: 160, dataIndex: 'to_amount', defaultVisible: true,
+    render: (_v: string | null, r: SimTrade) => {
+      const amount = r.to_amount;
+      const token = r.to_token;
+      if (!amount || !token) return '-';
+      const num = parseFloat(amount);
+      const display = num >= 1000 ? num.toLocaleString(undefined, { maximumFractionDigits: 2 }) : num.toPrecision(4);
+      return <span style={{ color: '#52c41a' }}>{display} {token}</span>;
+    }},
+  { key: 'gas_cost', title: 'Gas', width: 120, dataIndex: 'gas_fee', defaultVisible: true,
+    render: (_v: string | null, r: SimTrade) => {
+      if (!r.gas_fee) return '-';
+      return <span style={{ color: '#8c8c8c', fontSize: 12 }}>{parseFloat(r.gas_fee).toFixed(6)} {r.gas_token || ''}</span>;
+    }},
   { key: 'order_type', title: '订单类型', width: 90, dataIndex: 'order_type', defaultVisible: true, sorter: true,
     render: (v: string | null) => <Tag>{v || '-'}</Tag> },
   { key: 'trade_type', title: '交易模式', width: 90, dataIndex: 'trade_type', defaultVisible: true, sorter: true,
@@ -540,8 +555,23 @@ const Trading: React.FC = () => {
       render: (v: string) => <Tag color={v === 'BUY' ? 'green' : 'red'} style={{ fontSize: 11, padding: '0 4px' }}>{v === 'BUY' ? '买' : '卖'}</Tag> },
     { title: '价格', dataIndex: 'price', key: 'price', width: 100,
       render: (v: string) => formatPrice(v) },
-    { title: '数量', dataIndex: 'to_amount', key: 'qty', width: 80,
-      render: (v: string | null) => v ? parseFloat(v).toLocaleString() : '-' },
+    { title: '转出', dataIndex: 'from_amount', key: 'out', width: 110,
+      render: (_: string | null, r: SimTrade) => {
+        if (!r.from_amount || !r.from_token) return '-';
+        const n = parseFloat(r.from_amount);
+        return <span style={{ color: '#ff4d4f', fontSize: 11 }}>{n >= 1000 ? n.toLocaleString(undefined, { maximumFractionDigits: 2 }) : n.toPrecision(4)} {r.from_token}</span>;
+      }},
+    { title: '转入', dataIndex: 'to_amount', key: 'in', width: 110,
+      render: (_: string | null, r: SimTrade) => {
+        if (!r.to_amount || !r.to_token) return '-';
+        const n = parseFloat(r.to_amount);
+        return <span style={{ color: '#52c41a', fontSize: 11 }}>{n >= 1000 ? n.toLocaleString(undefined, { maximumFractionDigits: 2 }) : n.toPrecision(4)} {r.to_token}</span>;
+      }},
+    { title: 'Gas', dataIndex: 'gas_fee', key: 'gas', width: 90,
+      render: (_: string | null, r: SimTrade) => {
+        if (!r.gas_fee) return '-';
+        return <span style={{ color: '#8c8c8c', fontSize: 11 }}>{parseFloat(r.gas_fee).toFixed(6)} {r.gas_token || ''}</span>;
+      }},
     { title: '状态', dataIndex: 'status', key: 'status', width: 60,
       render: (v: string) => <Tag color={v === 'PENDING' ? 'blue' : 'default'} style={{ fontSize: 11, padding: '0 4px' }}>{v === 'PENDING' ? '持仓' : '平仓'}</Tag> },
   ];
