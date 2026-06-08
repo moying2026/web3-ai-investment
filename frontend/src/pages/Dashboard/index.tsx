@@ -542,10 +542,10 @@ const Dashboard: React.FC = () => {
       <Card
         size="small"
         style={{ marginBottom: 12 }}
-        bodyStyle={{ padding: '8px 12px' }}
+        bodyStyle={{ padding: '4px 8px' }}
       >
-        <div style={{ fontSize: 10, whiteSpace: 'nowrap' }}>
-          <Form form={filterForm} layout="inline" size="small" style={{ flexWrap: 'wrap', gap: '2px 4px' }}>
+        <div style={{ fontSize: 10, whiteSpace: 'nowrap', lineHeight: 1 }}>
+          <Form form={filterForm} layout="inline" size="small" style={{ flexWrap: 'wrap', gap: '1px 2px' }}>
             <Form.Item style={{ marginBottom: 0 }}>
               <Segmented
                 value={coinType}
