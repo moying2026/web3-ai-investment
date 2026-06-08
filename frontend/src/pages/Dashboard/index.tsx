@@ -677,7 +677,7 @@ const Dashboard: React.FC = () => {
           </Card>
         </Col>
         <Col span={8}>
-          <Card size="small" bodyStyle={{ padding: '8px 12px' }}>
+          <Card size="small" bodyStyle={{ padding: '8px 12px' }} style={{ height: '100%' }}>
             <Tabs
               size="small"
               items={['Tab1', 'Tab2', 'Tab3', 'Tab4'].map(label => ({
