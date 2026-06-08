@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Row, Col, Card, Statistic, Tag, Table, Badge, Switch, Space, message, Spin, Select, Input, InputNumber, Button, Form, Segmented, Progress } from 'antd';
+import { Row, Col, Card, Statistic, Tag, Table, Badge, Switch, Space, message, Spin, Select, Input, InputNumber, Button, Form, Segmented, Progress, Tabs } from 'antd';
 import {
   WalletOutlined,
   FundOutlined,
@@ -627,9 +627,9 @@ const Dashboard: React.FC = () => {
         </div>
       </Card>
 
-      {/* 新币表格 */}
+      {/* 代币表格 + 右侧标签页 */}
       <Row gutter={16}>
-        <Col span={24}>
+        <Col span={16}>
           <Card
             title={
               <Space>
@@ -674,6 +674,18 @@ const Dashboard: React.FC = () => {
                 scroll={{ x: 1300, y: 420 }}
               />
             </Spin>
+          </Card>
+        </Col>
+        <Col span={8}>
+          <Card size="small" bodyStyle={{ padding: '8px 12px' }}>
+            <Tabs
+              size="small"
+              items={['Tab1', 'Tab2', 'Tab3', 'Tab4'].map(label => ({
+                key: label,
+                label,
+                children: <div style={{ padding: '8px 0', color: '#8c8c8c', textAlign: 'center' }}>待陈哥指定内容</div>,
+              }))}
+            />
           </Card>
         </Col>
       </Row>
