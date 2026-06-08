@@ -4,7 +4,7 @@ import {
   getTokens, getTokenDetail, getTokenSnapshots,
   getSocialTopics, getStats
 } from '../services/tokenService';
-import { addSSEClient, getNewTokenBuffer, getLastPollTime } from '../services/pollingService';
+import { addSSEClient, getNewTokenBuffer, getLastPollTime, getSSEClientCount } from '../services/pollingService';
 import { ensureSimTables, placeOrder, closePosition, getPendingOrders, getTradesBySide, getPortfolioInfo, updateBudget } from '../services/simTradeService';
 
 const router = Router();
@@ -240,7 +240,7 @@ router.get('/health', (_req: Request, res: Response) => {
       status: 'ok',
       uptime: process.uptime(),
       lastPollTime: getLastPollTime(),
-      sseClients: 0, // 会在主文件中覆盖
+      sseClients: getSSEClientCount(),
       timestamp: new Date().toISOString(),
     },
   });
@@ -259,7 +259,7 @@ router.get('/stream/new-tokens', (req: Request, res: Response) => {
   const buffer = getNewTokenBuffer();
   if (buffer.length > 0) {
     for (const token of buffer.slice(-10)) {
-      res.write(`event: new_token\ndata: ${JSON.stringify({
+      res.write(`data: ${JSON.stringify({
         type: 'new_token',
         token: {
           chainId: token.chainId,
@@ -465,6 +465,77 @@ router.get('/sim/stats', (_req: Request, res: Response) => {
         byChain,
       },
     });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/sim/daily-pnl — 收益曲线数据（按天聚合）
+router.get('/sim/daily-pnl', (req: Request, res: Response) => {
+  try {
+    const days = Math.min(parseInt(req.query.days as string) || 30, 365);
+
+    // 获取初始预算
+    const portfolio = (db.prepare('SELECT total_budget FROM portfolio_state WHERE portfolio_id = \'main\'').get() as any);
+    const initialBudget: number = portfolio?.total_budget || 10000;
+
+    // 查询所有已平仓交易（SELL 方向，状态 SUCCESS），按平仓日期聚合
+    const rows = db.prepare(`
+      SELECT
+        CASE
+          WHEN typeof(closed_at) = 'integer' THEN date(closed_at / 1000, 'unixepoch', 'localtime')
+          ELSE date(closed_at)
+        END as trade_date,
+        SUM(CAST(pnl AS REAL)) as daily_pnl
+      FROM sim_trades
+      WHERE side = 'SELL' AND status = 'SUCCESS' AND closed_at IS NOT NULL
+      GROUP BY trade_date
+      HAVING trade_date IS NOT NULL
+      ORDER BY trade_date ASC
+    `).all() as { trade_date: string; daily_pnl: number }[];
+
+    // 构建日期→当日盈亏 map
+    const pnlByDate = new Map<string, number>();
+    for (const row of rows) {
+      pnlByDate.set(row.trade_date, row.daily_pnl);
+    }
+
+    // 确定日期范围：从第一笔平仓交易到今天
+    const today = new Date();
+    const endDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+    let startDate: Date;
+    if (rows.length > 0) {
+      // 从第一笔平仓日期开始
+      startDate = new Date(rows[0].trade_date + 'T00:00:00');
+      // 但最多只回溯 days 天
+      const maxStart = new Date(endDate);
+      maxStart.setDate(maxStart.getDate() - days + 1);
+      if (startDate < maxStart) startDate = maxStart;
+    } else {
+      // 无交易记录，返回最近 days 天
+      startDate = new Date(endDate);
+      startDate.setDate(startDate.getDate() - days + 1);
+    }
+
+    // 生成完整日期序列，填充空白天
+    const result: { date: string; pnl: number; totalValue: number }[] = [];
+    let cumulativePnl = 0;
+    const cursor = new Date(startDate);
+
+    while (cursor <= endDate) {
+      const dateStr = cursor.toISOString().slice(0, 10);
+      const dayPnl = pnlByDate.get(dateStr) || 0;
+      cumulativePnl += dayPnl;
+      result.push({
+        date: dateStr,
+        pnl: parseFloat(dayPnl.toFixed(2)),
+        totalValue: parseFloat((initialBudget + cumulativePnl).toFixed(2)),
+      });
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    res.json({ code: 0, data: result });
   } catch (err: any) {
     res.status(500).json({ code: -1, message: err.message });
   }
