@@ -555,13 +555,6 @@ const Dashboard: React.FC = () => {
       <Card
         size="small"
         style={{ marginBottom: 12 }}
-        title={<span style={{ fontSize: 13 }}><FilterOutlined /> 筛选条件</span>}
-        extra={
-          <Space size={4}>
-            <Button type="primary" size="small" icon={<FilterOutlined />} onClick={handleFilter}>查询</Button>
-            <Button size="small" icon={<ClearOutlined />} onClick={handleReset}>重置</Button>
-          </Space>
-        }
         bodyStyle={{ padding: '8px 12px' }}
       >
         <div style={{ fontSize: 10, whiteSpace: 'nowrap' }}>
@@ -624,6 +617,12 @@ const Dashboard: React.FC = () => {
                 <Form.Item name="liquidity_max" noStyle>
                   <InputNumber size="small" placeholder="最大" style={{ width: 70 }} min={0} />
                 </Form.Item>
+              </Space>
+            </Form.Item>
+            <Form.Item style={{ marginBottom: 0 }}>
+              <Space size={4}>
+                <Button type="primary" size="small" icon={<FilterOutlined />} onClick={handleFilter}>查询</Button>
+                <Button size="small" icon={<ClearOutlined />} onClick={handleReset}>重置</Button>
               </Space>
             </Form.Item>
           </Form>
