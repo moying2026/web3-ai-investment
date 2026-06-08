@@ -533,7 +533,7 @@ const Dashboard: React.FC = () => {
         </Col>
         <Col span={18}>
           <Card title="📈 组合收益曲线" size="small" style={{ height: '100%' }}>
-            <ReactECharts option={curveOption} style={{ height: 200 }} />
+            <ReactECharts option={curveOption} style={{ height: 160 }} />
           </Card>
         </Col>
       </Row>
