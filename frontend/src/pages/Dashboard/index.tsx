@@ -542,7 +542,7 @@ const Dashboard: React.FC = () => {
       <Card
         size="small"
         style={{ marginBottom: 12 }}
-        bodyStyle={{ padding: '4px 4px' }}
+        bodyStyle={{ padding: '2px 4px' }}
       >
         <div style={{ fontSize: 10, whiteSpace: 'nowrap', lineHeight: 1 }}>
           <Form form={filterForm} layout="inline" size="small" style={{ flexWrap: 'wrap', gap: '1px 2px' }}>
