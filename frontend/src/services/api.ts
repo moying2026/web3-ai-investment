@@ -73,6 +73,8 @@ export const simApi = {
   getStats: () => api.get<any, any>('/sim/stats'),
   getTrades: (params?: { page?: number; pageSize?: number; status?: string }) =>
     api.get<any, any>('/sim/trades', { params }),
+  getDailyPnl: (days?: number) =>
+    api.get<any, any>('/sim/daily-pnl', { params: { days: days ?? 30 } }),
 };
 
 export const ruleApi = {

@@ -23,9 +23,15 @@ export function addSSEClient(send: (data: string) => void): () => void {
   return () => sseClients.delete(send);
 }
 
+// 获取当前 SSE 客户端数量
+export function getSSEClientCount(): number {
+  return sseClients.size;
+}
+
 // 广播 SSE 事件
 function broadcast(event: string, data: any): void {
-  const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  // 只用 data 字段，不加 event: 命名，确保前端 onmessage 能接收
+  const msg = `data: ${JSON.stringify(data)}\n\n`;
   for (const send of sseClients) {
     try { send(msg); } catch { sseClients.delete(send); }
   }
@@ -48,9 +54,12 @@ export async function pollTokenData(): Promise<void> {
 
     for (const chain of chains) {
       try {
-        const data = await fetchMemeRushList(chain.chainId, 60);
-        memeRushResults.push(data);
-        console.log(`[API] ${chain.name} (Meme Rush): 获取 ${data.tokens.length} 个新币, total=${data.total}`);
+        // 每条链取 3 页，每页 200，覆盖 600 个代币
+        for (let page = 1; page <= 3; page++) {
+          const data = await fetchMemeRushList(chain.chainId, 200, page);
+          memeRushResults.push(data);
+          console.log(`[API] ${chain.name} (Meme Rush p${page}): 获取 ${data.tokens.length} 个代币, total=${data.total}`);
+        }
       } catch (err) {
         console.error(`[API] ${chain.name} (Meme Rush) 获取失败:`, err instanceof Error ? err.message : err);
       }
@@ -260,27 +269,29 @@ export function startPolling(): void {
   initSystemControl();
 
   // 注册模块
-  registerModule('polling', '热门轮询', 10000); // 从 3 秒放宽到 10 秒，减少 API 调用
-  registerModule('discovery', '新币发现流', 90000);
+  registerModule('polling', '热门轮询', 30000); // 从 10 秒放宽到 30 秒，配合 1500ms 串行间隔
+  registerModule('discovery', '新币发现流', 180000); // 从 90 秒放宽到 180 秒
   registerModule('ai', 'AI 评估引擎', 30000);
   registerModule('trading', '模拟交易', 10000);
   registerModule('trench', '战壕拦截', 30000);
 
-  // 代币数据：每 10 秒（从 3 秒放宽，减少 Binance API 调用）
+  // 代币数据：每 30 秒（从 10 秒进一步放宽，配合 1500ms 串行间隔）
   setInterval(() => {
     if (!isModuleRunning('polling')) return;
     pollTokenData();
     recordRun('polling', true);
-  }, 10000);
+  }, 30000);
 
-  // 社交话题：每 60 秒（错开 5 秒启动）
+  // 社交话题：每 120 秒（错开 20 秒启动，避免与 polling 并发）
   setTimeout(() => {
-    setInterval(pollSocialTopics, 60000);
+    setInterval(pollSocialTopics, 120000);
     pollSocialTopics();
-  }, 5000);
+  }, 20000);
 
-  // 快照检查：每 10 秒
-  setInterval(checkAndExecuteSnapshots, 10000);
+  // 快照检查：每 30 秒（错开 10 秒启动）
+  setTimeout(() => {
+    setInterval(checkAndExecuteSnapshots, 30000);
+  }, 10000);
 
   // 链上数据：每 3 天自动同步一次
   setInterval(fetchOnchainSupplyData, 3 * 24 * 60 * 60 * 1000);
@@ -350,7 +361,7 @@ export function startPolling(): void {
     }
   }, 10000);
 
-  // 新币发现流：每 90 秒（错开热门轮询，避免同时请求）
+  // 新币发现流：每 180 秒（从 90 秒放宽，错开 45 秒启动避免与 polling 并发）
   setTimeout(() => {
     setInterval(async () => {
       if (!isModuleRunning('discovery')) return;
@@ -360,14 +371,14 @@ export function startPolling(): void {
       } catch (err) {
         recordRun('discovery', false, String(err));
       }
-    }, 90000);
+    }, 180000);
     // 立即执行一次
     pollLatestTokens().then(() => {
       recordRun('discovery', true, undefined, { pollCount: discoveryPollCount });
     }).catch(err => {
       recordRun('discovery', false, String(err));
     });
-  }, 15000); // 延迟 15 秒启动，错开其他模块
+  }, 45000); // 延迟 45 秒启动，错开其他模块
 }
 
 export function getNewTokenBuffer(): BinanceToken[] {

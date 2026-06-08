@@ -11,8 +11,7 @@ import {
 import ReactECharts from 'echarts-for-react';
 import { useNavigate } from 'react-router-dom';
 import type { Token, Stats } from '../../types';
-import { tokenApi, statsApi, createNewTokenSSE } from '../../services/api';
-import { mockPortfolioCurve } from '../../mock/data';
+import { tokenApi, statsApi, simApi, createNewTokenSSE } from '../../services/api';
 import { formatPrice, formatVolume, formatSupply, formatPercent } from '../../utils/format';
 
 // 筛选参数类型
@@ -28,6 +27,40 @@ interface FilterParams {
   is_new_coin?: number;
 }
 
+// 代币图标组件：后端代理获取，失败显示首字母占位符
+const TokenIcon: React.FC<{
+  chain: string;
+  address: string;
+  iconPath?: string;
+  symbol: string;
+}> = ({ chain, address, iconPath, symbol }) => {
+  const [showImg, setShowImg] = useState(true);
+  const firstChar = (symbol || '?').charAt(0).toUpperCase();
+
+  if (!showImg || !iconPath) {
+    return (
+      <span
+        style={{
+          width: 24, height: 24, borderRadius: '50%', background: '#1890ff', color: '#fff',
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 12, fontWeight: 'bold', flexShrink: 0,
+        }}
+      >
+        {firstChar}
+      </span>
+    );
+  }
+
+  return (
+    <img
+      src={`/api/token-icon/${chain}/${address}?icon=${encodeURIComponent(iconPath)}`}
+      alt=""
+      style={{ width: 24, height: 24, borderRadius: '50%' }}
+      onError={() => setShowImg(false)}
+    />
+  );
+};
+
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const [autoMode, setAutoMode] = useState(false);
@@ -41,6 +74,7 @@ const Dashboard: React.FC = () => {
   const [sortField, setSortField] = useState<string>('first_seen_at');
   const [sortOrder, setSortOrder] = useState<string>('desc');
   const [coinType, setCoinType] = useState<string>('all');
+  const [pnlCurveData, setPnlCurveData] = useState<{ date: string; value: number }[]>([]);
 
   // 加载统计数据
   const loadStats = useCallback(async () => {
@@ -142,10 +176,20 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  // 加载收益曲线数据
+  const loadPnlCurve = useCallback(async () => {
+    try {
+      const res = await simApi.getDailyPnl(30);
+      const data = (res as any) || [];
+      setPnlCurveData(data.map((d: any) => ({ date: d.date, value: d.totalValue })));
+    } catch { /* 静默 */ }
+  }, []);
+
   // SSE + 初始加载 + 自动重连 + 轮询兜底
   useEffect(() => {
     loadStats();
     loadTokens();
+    loadPnlCurve();
 
     let es: EventSource | null = null;
     let retryDelay = 2000;
@@ -237,19 +281,25 @@ const Dashboard: React.FC = () => {
     } catch { return token.symbol; }
   };
 
-  // 收益曲线（Mock）
+  // 收益曲线（真实数据）
   const curveOption = {
-    tooltip: { trigger: 'axis' as const },
-    xAxis: { type: 'category' as const, data: mockPortfolioCurve.map(d => d.date) },
-    yAxis: { type: 'value' as const },
+    tooltip: {
+      trigger: 'axis' as const,
+      formatter: (params: any) => {
+        const d = params[0];
+        return `${d.axisValue}<br/>组合价值: $${d.value?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      },
+    },
+    xAxis: { type: 'category' as const, data: pnlCurveData.map(d => d.date) },
+    yAxis: { type: 'value' as const, axisLabel: { formatter: '${value}' } },
     series: [{
-      data: mockPortfolioCurve.map(d => d.value),
+      data: pnlCurveData.map(d => d.value),
       type: 'line',
       smooth: true,
       areaStyle: { opacity: 0.3 },
       itemStyle: { color: '#1890ff' },
     }],
-    grid: { left: 60, right: 20, top: 20, bottom: 30 },
+    grid: { left: 80, right: 20, top: 20, bottom: 30 },
   };
 
   // 表格列
@@ -260,28 +310,12 @@ const Dashboard: React.FC = () => {
       width: 200,
       render: (_: any, record: Token) => (
         <Space>
-          {record.icon ? (
-            <img
-              src={`https://www.binance.com${record.icon}`}
-              alt=""
-              style={{ width: 24, height: 24, borderRadius: '50%' }}
-              onError={(e) => {
-                const el = e.target as HTMLImageElement;
-                el.style.display = 'none';
-                const fb = el.nextElementSibling as HTMLElement;
-                if (fb) fb.style.display = 'flex';
-              }}
-            />
-          ) : null}
-          <span
-            style={{
-              width: 24, height: 24, borderRadius: '50%', background: '#1890ff', color: '#fff',
-              display: record.icon ? 'none' : 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 12, fontWeight: 'bold',
-            }}
-          >
-            {record.symbol?.charAt(0) || '?'}
-          </span>
+          <TokenIcon
+            chain={record.chain_id}
+            address={record.contract_address}
+            iconPath={record.icon}
+            symbol={record.symbol}
+          />
           <span style={{ fontWeight: 'bold' }}>{record.symbol}</span>
           <span style={{ color: '#8c8c8c', fontSize: 12, maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{parseName(record)}</span>
         </Space>
@@ -469,40 +503,36 @@ const Dashboard: React.FC = () => {
 
   return (
     <div>
-      {/* 顶部统计栏 */}
-      <Row gutter={16} style={{ marginBottom: 24 }}>
+      {/* 统计 + 收益曲线：左右布局 */}
+      <Row gutter={16} style={{ marginBottom: 12 }}>
         <Col span={6}>
-          <Card>
-            <Statistic title="代币总数" value={stats?.totalTokens ?? '-'} prefix={<WalletOutlined />} loading={!stats} />
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card>
-            <Statistic title="今日新增" value={stats?.todayNewTokens ?? '-'} prefix={<FundOutlined />} valueStyle={{ color: '#1890ff' }} loading={!stats} />
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card>
-            <Statistic title="社交话题" value={stats?.totalSocialTopics ?? '-'} prefix={<ThunderboltOutlined />} loading={!stats} />
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <div style={{ color: '#8c8c8c', marginBottom: 8 }}>交易模式</div>
-                <div style={{ fontSize: 24, fontWeight: 'bold' }}>{autoMode ? '🤖 AI全自动' : '👤 AI辅助'}</div>
-              </div>
-              <Switch checked={autoMode} onChange={setAutoMode} checkedChildren="自动" unCheckedChildren="手动" />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {/* 上方三个统计卡片水平排列 */}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Card size="small" bodyStyle={{ padding: '8px 10px', flex: 1 }}>
+                <Statistic title="代币" value={stats?.totalTokens ?? '-'} prefix={<WalletOutlined />} loading={!stats} valueStyle={{ fontSize: 18 }} />
+              </Card>
+              <Card size="small" bodyStyle={{ padding: '8px 10px', flex: 1 }}>
+                <Statistic title="新增" value={stats?.todayNewTokens ?? '-'} prefix={<FundOutlined />} valueStyle={{ color: '#1890ff', fontSize: 18 }} loading={!stats} />
+              </Card>
+              <Card size="small" bodyStyle={{ padding: '8px 10px', flex: 1 }}>
+                <Statistic title="话题" value={stats?.totalSocialTopics ?? '-'} prefix={<ThunderboltOutlined />} valueStyle={{ fontSize: 18 }} loading={!stats} />
+              </Card>
             </div>
-          </Card>
+            {/* 下方AI辅助单独一行 */}
+            <Card size="small" bodyStyle={{ padding: '8px 12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ color: '#8c8c8c', marginBottom: 4, fontSize: 12 }}>交易模式</div>
+                  <div style={{ fontSize: 16, fontWeight: 'bold' }}>{autoMode ? '🤖 AI全自动' : '👤 AI辅助'}</div>
+                </div>
+                <Switch checked={autoMode} onChange={setAutoMode} checkedChildren="自动" unCheckedChildren="手动" size="small" />
+              </div>
+            </Card>
+          </div>
         </Col>
-      </Row>
-
-      {/* 收益曲线（Mock） */}
-      <Row gutter={16} style={{ marginBottom: 24 }}>
-        <Col span={24}>
-          <Card title="📈 组合收益曲线（模拟）" size="small">
+        <Col span={18}>
+          <Card title="📈 组合收益曲线" size="small" style={{ height: '100%' }}>
             <ReactECharts option={curveOption} style={{ height: 300 }} />
           </Card>
         </Col>
@@ -524,77 +554,80 @@ const Dashboard: React.FC = () => {
       {/* 筛选区域 */}
       <Card
         size="small"
-        style={{ marginBottom: 16 }}
-        title={<><FilterOutlined /> 筛选条件</>}
+        style={{ marginBottom: 12 }}
+        title={<span style={{ fontSize: 13 }}><FilterOutlined /> 筛选条件</span>}
         extra={
-          <Space>
+          <Space size={4}>
             <Button type="primary" size="small" icon={<FilterOutlined />} onClick={handleFilter}>查询</Button>
             <Button size="small" icon={<ClearOutlined />} onClick={handleReset}>重置</Button>
           </Space>
         }
+        bodyStyle={{ padding: '8px 12px' }}
       >
-        <Form form={filterForm} layout="inline" style={{ flexWrap: 'wrap', gap: '8px 0' }}>
-          <Form.Item label="所属链" name="chain" initialValue="all">
-            <Select style={{ width: 120 }}>
-              <Select.Option value="all">全部</Select.Option>
-              <Select.Option value="56">BSC</Select.Option>
-              <Select.Option value="CT_501">Solana</Select.Option>
-              <Select.Option value="8453">Base</Select.Option>
-              <Select.Option value="1">ETH</Select.Option>
-            </Select>
-          </Form.Item>
-          <Form.Item label="发行时间" name="launch_within" initialValue="all">
-            <Select style={{ width: 130 }}>
-              <Select.Option value="all">全部</Select.Option>
-              <Select.Option value="1h">最近1小时</Select.Option>
-              <Select.Option value="6h">最近6小时</Select.Option>
-              <Select.Option value="24h">最近24小时</Select.Option>
-              <Select.Option value="3d">最近3天</Select.Option>
-              <Select.Option value="7d">最近7天</Select.Option>
-            </Select>
-          </Form.Item>
-          <Form.Item label="风险等级" name="risk_level" initialValue="all">
-            <Select style={{ width: 120 }}>
-              <Select.Option value="all">全部</Select.Option>
-              <Select.Option value="low">低风险</Select.Option>
-              <Select.Option value="medium">中风险</Select.Option>
-              <Select.Option value="high">高风险</Select.Option>
-            </Select>
-          </Form.Item>
-          <Form.Item label="审计风险" name="audit_risk" initialValue="all">
-            <Select style={{ width: 120 }}>
-              <Select.Option value="all">全部</Select.Option>
-              <Select.Option value="safe">安全</Select.Option>
-              <Select.Option value="warning">警告</Select.Option>
-              <Select.Option value="danger">危险</Select.Option>
-            </Select>
-          </Form.Item>
-          <Form.Item label="发行方" name="creator">
-            <Input placeholder="合约地址" style={{ width: 200 }} allowClear />
-          </Form.Item>
-          <Form.Item label="持有人" style={{ marginBottom: 0 }}>
-            <Space size={4}>
-              <Form.Item name="holders_min" noStyle>
-                <InputNumber placeholder="最小" style={{ width: 80 }} min={0} />
-              </Form.Item>
-              <span>~</span>
-              <Form.Item name="holders_max" noStyle>
-                <InputNumber placeholder="最大" style={{ width: 80 }} min={0} />
-              </Form.Item>
-            </Space>
-          </Form.Item>
-          <Form.Item label="流动性($)" style={{ marginBottom: 0 }}>
-            <Space size={4}>
-              <Form.Item name="liquidity_min" noStyle>
-                <InputNumber placeholder="最小" style={{ width: 100 }} min={0} />
-              </Form.Item>
-              <span>~</span>
-              <Form.Item name="liquidity_max" noStyle>
-                <InputNumber placeholder="最大" style={{ width: 100 }} min={0} />
-              </Form.Item>
-            </Space>
-          </Form.Item>
-        </Form>
+        <div style={{ fontSize: 10, whiteSpace: 'nowrap' }}>
+          <Form form={filterForm} layout="inline" size="small" style={{ flexWrap: 'nowrap', gap: '2px 4px' }}>
+            <Form.Item label="所属链" name="chain" initialValue="all" style={{ marginBottom: 0 }}>
+              <Select size="small" style={{ width: 80 }}>
+                <Select.Option value="all">全部</Select.Option>
+                <Select.Option value="56">BSC</Select.Option>
+                <Select.Option value="CT_501">SOL</Select.Option>
+                <Select.Option value="8453">Base</Select.Option>
+                <Select.Option value="1">ETH</Select.Option>
+              </Select>
+            </Form.Item>
+            <Form.Item label="发行" name="launch_within" initialValue="all" style={{ marginBottom: 0 }}>
+              <Select size="small" style={{ width: 90 }}>
+                <Select.Option value="all">全部</Select.Option>
+                <Select.Option value="1h">1小时</Select.Option>
+                <Select.Option value="6h">6小时</Select.Option>
+                <Select.Option value="24h">24小时</Select.Option>
+                <Select.Option value="3d">3天</Select.Option>
+                <Select.Option value="7d">7天</Select.Option>
+              </Select>
+            </Form.Item>
+            <Form.Item label="风险" name="risk_level" initialValue="all" style={{ marginBottom: 0 }}>
+              <Select size="small" style={{ width: 70 }}>
+                <Select.Option value="all">全部</Select.Option>
+                <Select.Option value="low">低</Select.Option>
+                <Select.Option value="medium">中</Select.Option>
+                <Select.Option value="high">高</Select.Option>
+              </Select>
+            </Form.Item>
+            <Form.Item label="审计" name="audit_risk" initialValue="all" style={{ marginBottom: 0 }}>
+              <Select size="small" style={{ width: 70 }}>
+                <Select.Option value="all">全部</Select.Option>
+                <Select.Option value="safe">安全</Select.Option>
+                <Select.Option value="warning">警告</Select.Option>
+                <Select.Option value="danger">危险</Select.Option>
+              </Select>
+            </Form.Item>
+            <Form.Item label="发行方" name="creator" style={{ marginBottom: 0 }}>
+              <Input size="small" placeholder="地址" style={{ width: 120 }} allowClear />
+            </Form.Item>
+            <Form.Item label="持有人" style={{ marginBottom: 0 }}>
+              <Space size={2}>
+                <Form.Item name="holders_min" noStyle>
+                  <InputNumber size="small" placeholder="最小" style={{ width: 60 }} min={0} />
+                </Form.Item>
+                <span>~</span>
+                <Form.Item name="holders_max" noStyle>
+                  <InputNumber size="small" placeholder="最大" style={{ width: 60 }} min={0} />
+                </Form.Item>
+              </Space>
+            </Form.Item>
+            <Form.Item label="流动性" style={{ marginBottom: 0 }}>
+              <Space size={2}>
+                <Form.Item name="liquidity_min" noStyle>
+                  <InputNumber size="small" placeholder="最小" style={{ width: 70 }} min={0} />
+                </Form.Item>
+                <span>~</span>
+                <Form.Item name="liquidity_max" noStyle>
+                  <InputNumber size="small" placeholder="最大" style={{ width: 70 }} min={0} />
+                </Form.Item>
+              </Space>
+            </Form.Item>
+          </Form>
+        </div>
       </Card>
 
       {/* 新币表格 */}

@@ -1,5 +1,16 @@
 import { Router, Request, Response } from 'express';
+import * as fs from 'fs';
+import * as path from 'path';
 import { db } from '../db/database';
+
+// undici + proxy support
+const { fetch: undiciFetch, ProxyAgent } = require('undici');
+const PROXY_URL = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || '';
+let iconDispatcher: any = undefined;
+if (PROXY_URL) {
+  iconDispatcher = new ProxyAgent(PROXY_URL);
+  console.log(`[IconProxy] 使用代理: ${PROXY_URL}`);
+}
 import {
   getTokens, getTokenDetail, getTokenSnapshots,
   getSocialTopics, getStats
@@ -298,6 +309,122 @@ function safeJsonParse(str: any): any {
   if (typeof str === 'object') return str;
   try { return JSON.parse(str); } catch { return str; }
 }
+
+// ============ 代币图标代理 ============
+
+const ICON_CACHE_DIR = path.resolve(__dirname, '../../data/token-icons');
+
+// 确保缓存目录存在
+if (!fs.existsSync(ICON_CACHE_DIR)) {
+  fs.mkdirSync(ICON_CACHE_DIR, { recursive: true });
+}
+
+// GET /api/token-icon/:chain/:address — 从本地缓存返回图标，无缓存返回404
+router.get('/token-icon/:chain/:address', (req: Request, res: Response) => {
+  try {
+    const chain = String(req.params.chain);
+    const address = String(req.params.address);
+
+    // 在缓存目录中查找匹配文件（支持任意扩展名）
+    const files = fs.readdirSync(ICON_CACHE_DIR);
+    const match = files.find(f => f.startsWith(`${chain}_${address}.`));
+
+    if (match) {
+      // 本地缓存命中
+      const cacheFilePath = path.join(ICON_CACHE_DIR, match);
+      const ext = path.extname(match).toLowerCase();
+      const mimeMap: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif' };
+      const mimeType = mimeMap[ext] || 'image/png';
+      res.setHeader('Content-Type', mimeType);
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      fs.createReadStream(cacheFilePath).pipe(res);
+      return;
+    }
+
+    // 本地无缓存，从 Binance CDN 下载
+    const iconPath = qs(req.query.icon);
+    if (!iconPath) {
+      res.status(404).json({ code: -1, message: '图标未缓存且缺少 icon 参数' });
+      return;
+    }
+
+    const cdnUrl = `https://bin.bnbstatic.com${iconPath}`;
+    const fetchOptions: any = {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+      signal: AbortSignal.timeout(10000),
+    };
+    if (iconDispatcher) fetchOptions.dispatcher = iconDispatcher;
+
+    undiciFetch(cdnUrl, fetchOptions).then(async (resp: any) => {
+      if (!resp.ok) {
+        res.status(404).json({ code: -1, message: `CDN 图标获取失败 (${resp.status})` });
+        return;
+      }
+      const buf = Buffer.from(await resp.arrayBuffer());
+      if (buf.length === 0) {
+        res.status(404).json({ code: -1, message: 'CDN 返回空内容' });
+        return;
+      }
+
+      // 保存到本地缓存
+      const ext = path.extname(iconPath) || '.png';
+      const cacheFileName = `${chain}_${address}${ext}`;
+      const cacheFilePath = path.join(ICON_CACHE_DIR, cacheFileName);
+      fs.writeFileSync(cacheFilePath, buf);
+
+      const mimeMap: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif' };
+      res.setHeader('Content-Type', mimeMap[ext] || 'image/png');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.end(buf);
+    }).catch((err: any) => {
+      res.status(404).json({ code: -1, message: `CDN 请求失败: ${err.message}` });
+    });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// POST /api/token-icon/upload — 浏览器端上传base64图标到后端缓存
+router.post('/token-icon/upload', (req: Request, res: Response) => {
+  try {
+    const { chain, address, icon } = req.body;
+    if (!chain || !address || !icon) {
+      res.status(400).json({ code: -1, message: '缺少必填字段: chain, address, icon (base64)' });
+      return;
+    }
+
+    // 解析 base64 data URI: data:image/png;base64,xxx 或纯 base64
+    let base64Data = icon;
+    let ext = '.png';
+    const dataUriMatch = icon.match(/^data:image\/(\w+);base64,(.+)$/);
+    if (dataUriMatch) {
+      ext = `.${dataUriMatch[1] === 'jpeg' ? 'jpg' : dataUriMatch[1]}`;
+      base64Data = dataUriMatch[2];
+    }
+
+    const buf = Buffer.from(base64Data, 'base64');
+    if (buf.length === 0) {
+      res.status(400).json({ code: -1, message: 'base64 数据为空' });
+      return;
+    }
+
+    const cacheFileName = `${chain}_${address}${ext}`;
+    const cacheFilePath = path.join(ICON_CACHE_DIR, cacheFileName);
+
+    // 清理旧文件（不同扩展名）
+    const files = fs.readdirSync(ICON_CACHE_DIR);
+    for (const f of files) {
+      if (f.startsWith(`${chain}_${address}.`) && f !== cacheFileName) {
+        fs.unlinkSync(path.join(ICON_CACHE_DIR, f));
+      }
+    }
+
+    fs.writeFileSync(cacheFilePath, buf);
+    res.json({ code: 0, message: '图标上传成功', data: { path: `/api/token-icon/${chain}/${address}` } });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
 
 export default router;
 

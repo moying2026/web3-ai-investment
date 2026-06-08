@@ -14,17 +14,67 @@ if (PROXY_URL) {
   console.log('[API] 直连模式（无代理）');
 }
 
-// 请求间隔控制（避免限流）
-let lastRequestTime = 0;
-const MIN_REQUEST_INTERVAL_MS = 500; // 增加到 500ms，避免多模块同时请求触发 429
+// ===== 请求队列 + Mutex（修复竞态条件） =====
+const MIN_REQUEST_INTERVAL_MS = 1500; // 从 500ms 提升到 1500ms
+let requestQueue: Array<() => void> = [];
+let isProcessing = false;
 
-async function throttle(): Promise<void> {
-  const now = Date.now();
-  const elapsed = now - lastRequestTime;
-  if (elapsed < MIN_REQUEST_INTERVAL_MS) {
-    await new Promise(resolve => setTimeout(resolve, MIN_REQUEST_INTERVAL_MS - elapsed));
+async function processQueue(): Promise<void> {
+  if (isProcessing) return;
+  isProcessing = true;
+
+  while (requestQueue.length > 0) {
+    const resolve = requestQueue.shift()!;
+    resolve(); // 释放下一个请求
+    await new Promise(r => setTimeout(r, MIN_REQUEST_INTERVAL_MS));
   }
-  lastRequestTime = Date.now();
+
+  isProcessing = false;
+}
+
+// 串行化 throttle：所有请求排队，确保间隔
+async function throttle(): Promise<void> {
+  return new Promise<void>((resolve) => {
+    requestQueue.push(resolve);
+    processQueue();
+  });
+}
+
+// 429 指数退避重试
+const MAX_RETRIES = 4;
+const RETRY_BASE_DELAY_MS = 2000; // 2s → 4s → 8s → 16s
+
+async function fetchWithRetry(url: string, options: any, retries = MAX_RETRIES): Promise<any> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const resp = await proxyFetch(url, options);
+
+      if (resp.status === 429) {
+        if (attempt < retries) {
+          const delay = RETRY_BASE_DELAY_MS * Math.pow(2, attempt);
+          console.warn(`[API] 429 限流，${delay}ms 后重试 (${attempt + 1}/${retries})`);
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+        throw new Error(`HTTP 429: 重试 ${retries} 次后仍被限流`);
+      }
+
+      if (!resp.ok) {
+        throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+      }
+
+      return resp;
+    } catch (err: any) {
+      if (err.message?.includes('429') && attempt < retries) {
+        const delay = RETRY_BASE_DELAY_MS * Math.pow(2, attempt);
+        console.warn(`[API] 429 异常，${delay}ms 后重试 (${attempt + 1}/${retries})`);
+        await new Promise(r => setTimeout(r, delay));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error('fetchWithRetry: 不可达');
 }
 
 // 通用 fetch 包装（支持代理）
@@ -57,15 +107,11 @@ export async function fetchTokenList(
   const url = `${BASE_URL}/bapi/defi/v1/public/wallet-direct/buw/wallet/market/token/pulse/unified/rank/list`;
   const body = { chain, sort, page, size };
 
-  const resp = await proxyFetch(url, {
+  const resp = await fetchWithRetry(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-
-  if (!resp.ok) {
-    throw new Error(`fetchTokenList HTTP ${resp.status}: ${resp.statusText}`);
-  }
 
   const json = (await resp.json()) as BinanceApiResponse<TokenListData>;
 
@@ -79,7 +125,8 @@ export async function fetchTokenList(
 // Meme Rush 新币列表（rankType: 10）
 export async function fetchMemeRushList(
   chainId: string = '56',
-  size: number = 60,
+  size: number = 200,
+  pageNo: number = 1,
   options: {
     launchTimeMin?: number;
     liquidityMin?: number;
@@ -98,25 +145,22 @@ export async function fetchMemeRushList(
     rankType: 10,
     period: options.period || 30,
     chainId,
-    launchTimeMin: options.launchTimeMin || 15,
-    liquidityMin: options.liquidityMin || 5000,
-    volumeMin: options.volumeMin || 10000,
-    countMin: options.countMin || 10,
+    launchTimeMin: options.launchTimeMin ?? 0,
+    liquidityMin: options.liquidityMin ?? 0,
+    volumeMin: options.volumeMin ?? 0,
+    countMin: options.countMin ?? 0,
     tagFilter: options.tagFilter || [1, 2, 3],
-    sortBy: options.sortBy || 1,
+    sortBy: options.sortBy || 4,  // 按上线时间排序（最新在前）
     size,
-    uniqueTraderMin: options.uniqueTraderMin || 10,
+    pageNo,
+    uniqueTraderMin: options.uniqueTraderMin ?? 0,
   };
 
-  const resp = await proxyFetch(url, {
+  const resp = await fetchWithRetry(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-
-  if (!resp.ok) {
-    throw new Error(`fetchMemeRushList HTTP ${resp.status}: ${resp.statusText}`);
-  }
 
   const json = (await resp.json()) as BinanceApiResponse<TokenListData>;
 
@@ -141,7 +185,7 @@ export async function fetchLatestTokens(
     rankType: 10,
     period: 30,
     chainId,
-    launchTimeMin: 15,       // 至少上线15分钟（过滤刚创建的垃圾币）
+    launchTimeMin: 0,       // 不限制上线时间，完整采集
     launchTimeMax: launchTimeMaxMinutes,  // 最大上线时间
     liquidityMin: 0,         // 不过滤流动性
     volumeMin: 0,            // 不过滤交易量
@@ -152,15 +196,11 @@ export async function fetchLatestTokens(
     uniqueTraderMin: 0,      // 不过滤交易者数
   };
 
-  const resp = await proxyFetch(url, {
+  const resp = await fetchWithRetry(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-
-  if (!resp.ok) {
-    throw new Error(`fetchLatestTokens HTTP ${resp.status}: ${resp.statusText}`);
-  }
 
   const json = (await resp.json()) as BinanceApiResponse<TokenListData>;
 
@@ -211,11 +251,7 @@ export async function fetchSocialTopics(
 
   const url = `${BASE_URL}/bapi/defi/v2/public/wallet-direct/buw/wallet/market/token/social-rush/rank/list/ai?${params}`;
 
-  const resp = await proxyFetch(url);
-
-  if (!resp.ok) {
-    throw new Error(`fetchSocialTopics HTTP ${resp.status}: ${resp.statusText}`);
-  }
+  const resp = await fetchWithRetry(url, {});
 
   const json = (await resp.json()) as BinanceApiResponse<SocialTopic[]>;
 
@@ -233,11 +269,7 @@ export async function fetchPriceInfo(chainId: string, contractAddress: string): 
   const params = new URLSearchParams({ chainId, contractAddress });
   const url = `${BASE_URL}/bapi/defi/v1/public/wallet-direct/buw/wallet/market/token/dynamic/info/ai?${params}`;
 
-  const resp = await proxyFetch(url);
-
-  if (!resp.ok) {
-    throw new Error(`fetchPriceInfo HTTP ${resp.status}: ${resp.statusText}`);
-  }
+  const resp = await fetchWithRetry(url, {});
 
   const json = (await resp.json()) as BinanceApiResponse<PriceInfo>;
 

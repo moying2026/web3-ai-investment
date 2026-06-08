@@ -204,3 +204,134 @@ export function getIssuerProfile(creatorAddress: string): any {
 
   return { ...profile, tokens };
 }
+
+// ==================== 发行方列表（分页/排序/筛选） ====================
+
+export function listIssuers(params: {
+  page?: number;
+  pageSize?: number;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+  blacklist?: string;
+  search?: string;
+  minTokens?: number;
+  maxTokens?: number;
+}): any {
+  const page = params.page || 1;
+  const pageSize = Math.min(params.pageSize || 50, 200);
+  const offset = (page - 1) * pageSize;
+
+  const sortFields: Record<string, string> = {
+    total_tokens: 'ip.total_tokens',
+    survival_rate: 'ip.survival_rate',
+    first_seen_at: 'ip.first_seen_at',
+    last_seen_at: 'ip.last_seen_at',
+    updated_at: 'ip.updated_at',
+    blacklisted_at: 'ip.blacklisted_at',
+    token_count: 'token_count',
+  };
+  const sortCol = sortFields[params.sortBy || ''] || 'ip.total_tokens';
+  const sortDir = params.sortOrder === 'asc' ? 'ASC' : 'DESC';
+
+  const conditions: string[] = [];
+  const whereParams: any[] = [];
+
+  if (params.blacklist === 'none') {
+    conditions.push("(ip.blacklist_status IS NULL OR ip.blacklist_status = 'none')");
+  } else if (params.blacklist === 'manual') {
+    conditions.push("ip.blacklist_status = 'manual'");
+  } else if (params.blacklist === 'blacklisted') {
+    conditions.push("ip.blacklist_status != 'none' AND ip.blacklist_status IS NOT NULL");
+  }
+
+  if (params.search) {
+    conditions.push('ip.issuer_address LIKE ?');
+    whereParams.push('%' + params.search + '%');
+  }
+  if (params.minTokens !== undefined) {
+    conditions.push('ip.total_tokens >= ?');
+    whereParams.push(params.minTokens);
+  }
+  if (params.maxTokens !== undefined) {
+    conditions.push('ip.total_tokens <= ?');
+    whereParams.push(params.maxTokens);
+  }
+
+  const whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
+
+  const total = (db.prepare('SELECT COUNT(*) as c FROM issuer_profiles ip ' + whereClause) as SqliteStatement).get(...whereParams) as any;
+
+  const data = (db.prepare(
+    'SELECT ip.*, (SELECT COUNT(*) FROM issuer_tokens it WHERE it.issuer_address = ip.issuer_address) as token_count ' +
+    'FROM issuer_profiles ip ' + whereClause +
+    ' ORDER BY ' + sortCol + ' ' + sortDir + ' LIMIT ? OFFSET ?'
+  ) as SqliteStatement).all(...whereParams, pageSize, offset) as any[];
+
+  return { data, total: total.c, page, pageSize };
+}
+
+// ==================== 发行方拉黑/取消拉黑 ====================
+
+export function blacklistIssuer(address: string, action: 'blacklist' | 'unblacklist', reason?: string): any {
+  const existing = (db.prepare('SELECT * FROM issuer_profiles WHERE issuer_address = ?') as SqliteStatement).get(address);
+  if (!existing) return null;
+
+  const now = new Date().toISOString();
+  if (action === 'blacklist') {
+    (db.prepare(
+      "UPDATE issuer_profiles SET blacklist_status = 'manual', blacklist_reason = ?, blacklisted_at = ?, updated_at = datetime('now') WHERE issuer_address = ?"
+    ) as SqliteStatement).run(reason || '手动拉黑', now, address);
+  } else {
+    (db.prepare(
+      "UPDATE issuer_profiles SET blacklist_status = 'none', blacklist_reason = NULL, blacklisted_at = NULL, updated_at = datetime('now') WHERE issuer_address = ?"
+    ) as SqliteStatement).run(address);
+  }
+
+  return (db.prepare('SELECT * FROM issuer_profiles WHERE issuer_address = ?') as SqliteStatement).get(address);
+}
+
+// ==================== 批量刷新发行方数据 ====================
+
+export async function batchRefreshIssuers(addresses: string[]): Promise<{ success: number; failed: number; results: any[] }> {
+  let success = 0;
+  let failed = 0;
+  const results: any[] = [];
+
+  for (const address of addresses) {
+    const token = (db.prepare(
+      'SELECT chain_id FROM tokens WHERE creator_address = ? LIMIT 1'
+    ) as SqliteStatement).get(address) as any;
+
+    if (!token) {
+      results.push({ address, status: 'no_tokens' });
+      failed++;
+      continue;
+    }
+
+    const ok = await fetchSingleIssuerData(token.chain_id, address);
+    if (ok) {
+      results.push({ address, status: 'ok' });
+      success++;
+    } else {
+      results.push({ address, status: 'fetch_failed' });
+      failed++;
+    }
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+
+  return { success, failed, results };
+}
+
+// ==================== 检查发行方是否在黑名单 ====================
+
+export function isIssuerBlacklisted(address: string): { blacklisted: boolean; status: string; reason?: string } {
+  if (!address) return { blacklisted: false, status: 'none' };
+  const profile = (db.prepare(
+    'SELECT blacklist_status, blacklist_reason FROM issuer_profiles WHERE issuer_address = ?'
+  ) as SqliteStatement).get(address) as any;
+
+  if (!profile || !profile.blacklist_status || profile.blacklist_status === 'none') {
+    return { blacklisted: false, status: 'none' };
+  }
+  return { blacklisted: true, status: profile.blacklist_status, reason: profile.blacklist_reason };
+}
