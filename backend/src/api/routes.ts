@@ -33,6 +33,21 @@ function qn(val: unknown): number | undefined {
   return isNaN(n) ? undefined : n;
 }
 
+// Chain 名称 → chain_id 映射（tokens 表存的是数字 ID）
+const CHAIN_MAP: Record<string, string> = {
+  'bsc': '56', '56': '56',
+  'eth': '1', '1': '1', 'ethereum': '1',
+  'base': '8453', '8453': '8453',
+  'polygon': '137', '137': '137',
+  'arbitrum': '42161', '42161': '42161',
+  'optimism': '10', '10': '10',
+  'solana': 'CT_501', 'CT_501': 'CT_501',
+  'avalanche': '43114', '43114': '43114',
+};
+function resolveChainId(chain: string): string {
+  return CHAIN_MAP[chain.toLowerCase()] || chain;
+}
+
 // GET /api/tokens — 代币列表（支持多维筛选）
 router.get('/tokens', (req: Request, res: Response) => {
   try {
@@ -868,7 +883,7 @@ router.get('/tokens/:chain/:address/address-risk', (req: Request, res: Response)
 // GET /api/agents/score/:chain/:address — 多 Agent 评分
 router.get('/agents/score/:chain/:address', (req: Request, res: Response) => {
   try {
-    const chain = String(req.params.chain);
+    const chain = resolveChainId(String(req.params.chain));
     const address = String(req.params.address);
     const { evaluateDecision } = require('../services/agents/decisionAgent');
     const result = evaluateDecision({ chainId: chain, contractAddress: address });
@@ -985,7 +1000,7 @@ import { runDiscussion, getDiscussionHistory } from '../services/agentDiscussion
 // POST /api/agents/discuss/:chain/:contractAddress — 启动代币讨论
 router.post('/agents/discuss/:chain/:contractAddress', async (req: Request, res: Response) => {
   try {
-    const chain = String(req.params.chain);
+    const chain = resolveChainId(String(req.params.chain));
     const contract = String(req.params.contractAddress);
     const result = await runDiscussion(chain, contract);
     res.json({ code: 0, data: result });
@@ -997,7 +1012,7 @@ router.post('/agents/discuss/:chain/:contractAddress', async (req: Request, res:
 // GET /api/agents/discuss/:chain/:contractAddress/history — 讨论历史
 router.get('/agents/discuss/:chain/:contractAddress/history', (req: Request, res: Response) => {
   try {
-    const chain = String(req.params.chain);
+    const chain = resolveChainId(String(req.params.chain));
     const contract = String(req.params.contractAddress);
     const limit = parseInt(qs(req.query.limit) || '10') || 10;
     const result = getDiscussionHistory(chain, contract, limit);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Row, Col, Card, Statistic, Tag, Table, Badge, Switch, Space, message, Spin, Select, Input, InputNumber, Button, Form, Segmented, Progress, Tabs, Divider, Alert, Descriptions } from 'antd';
 import {
   WalletOutlined,
@@ -11,6 +11,8 @@ import {
   SafetyOutlined,
   ReloadOutlined,
   ShoppingCartOutlined,
+  PauseCircleOutlined,
+  PlayCircleOutlined,
 } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
 import type { Token, Stats } from '../../types';
@@ -312,7 +314,11 @@ const TokenQuickView: React.FC<{ chain: string; address: string }> = ({ chain, a
   const [dynamicData, setDynamicData] = useState<any>(null);
   const [similarData, setSimilarData] = useState<any>(null);
   const [addressRisk, setAddressRisk] = useState<any>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // 全量加载（首次 / 切换代币时）
   useEffect(() => {
     setLoading(true);
     setToken(null);
@@ -321,6 +327,7 @@ const TokenQuickView: React.FC<{ chain: string; address: string }> = ({ chain, a
     setDynamicData(null);
     setSimilarData(null);
     setAddressRisk(null);
+    setLastUpdated(null);
 
     Promise.all([
       tokenApi.getDetail(chain, address).catch(() => null),
@@ -336,9 +343,31 @@ const TokenQuickView: React.FC<{ chain: string; address: string }> = ({ chain, a
       setDynamicData(dynamic);
       setSimilarData(similar);
       setAddressRisk(addrRisk);
-
+      setLastUpdated(new Date());
     }).finally(() => setLoading(false));
   }, [chain, address]);
+
+  // 增量刷新：只拉价格/交易量/持有人等动态字段，不闪烁
+  const refreshDynamic = useCallback(async () => {
+    try {
+      const [tokenData, dynamic] = await Promise.all([
+        tokenApi.getDetail(chain, address).catch(() => null),
+        dynamicApi.get(chain, address).catch(() => null),
+      ]);
+      if (tokenData) setToken(tokenData as any);
+      if (dynamic) setDynamicData(dynamic);
+      setLastUpdated(new Date());
+    } catch { /* 静默 */ }
+  }, [chain, address]);
+
+  // 30 秒自动轮询
+  useEffect(() => {
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    if (autoRefresh && chain && address) {
+      timerRef.current = setInterval(() => { refreshDynamic(); }, 30000);
+    }
+    return () => { if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; } };
+  }, [chain, address, autoRefresh, refreshDynamic]);
 
   if (loading) return <Spin size="large" style={{ display: 'block', margin: '60px auto' }} />;
   if (!token) return <div style={{ textAlign: 'center', padding: 40, color: '#8c8c8c' }}>代币未找到</div>;
@@ -477,12 +506,26 @@ const TokenQuickView: React.FC<{ chain: string; address: string }> = ({ chain, a
           </Col>
           <Col>
             <Space size={4}>
+              {/* 自动刷新状态 */}
+              {lastUpdated && (
+                <span style={{ fontSize: 10, color: '#8c8c8c', marginRight: 4 }}>
+                  {autoRefresh ? '🔄 自动刷新中' : '⏸️ 已暂停'} · {lastUpdated.toLocaleTimeString()}
+                </span>
+              )}
+              <Button
+                size="small"
+                icon={autoRefresh ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
+                onClick={() => setAutoRefresh(!autoRefresh)}
+                type={autoRefresh ? 'primary' : 'default'}
+                ghost={autoRefresh}
+              >
+                {autoRefresh ? '30s' : '已暂停'}
+              </Button>
               <Button size="small" icon={<ReloadOutlined />} loading={refreshing} onClick={async () => {
                 setRefreshing(true);
                 try {
-                  const fresh = await api.get(`/tokens/${chain}/${address}/refresh-onchain`);
-                  if (fresh) setToken(fresh as any);
-                  message.success('链上数据已刷新');
+                  await refreshDynamic();
+                  message.success('数据已刷新');
                 } catch { message.error('刷新失败'); }
                 finally { setRefreshing(false); }
               }}>刷新</Button>

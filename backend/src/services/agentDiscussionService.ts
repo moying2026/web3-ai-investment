@@ -349,8 +349,15 @@ function decisionAgentAnalysis(entries: AgentDiscussionEntry[], tokenSymbol: str
 export async function runDiscussion(chain: string, contractAddress: string): Promise<DiscussionResult> {
   initDiscussionTable();
 
-  // 收集数据
-  const data = collectTokenData(chain, contractAddress);
+  // chain 映射：bsc→56, eth→1 等
+  const CHAIN_MAP: Record<string, string> = {
+    'bsc': '56', '56': '56', 'eth': '1', '1': '1', 'base': '8453', '8453': '8453',
+    'solana': 'CT_501', 'CT_501': 'CT_501',
+  };
+  const dbChain = CHAIN_MAP[chain.toLowerCase()] || chain;
+
+  // 收集数据（用 dbChain 查询 tokens 表）
+  const data = collectTokenData(dbChain, contractAddress);
   const tokenSymbol = data.token?.symbol || contractAddress.substring(0, 10);
   const sessionId = uuidv4();
 
