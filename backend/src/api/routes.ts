@@ -985,6 +985,8 @@ import {
   getTokenInfo as getBscscanTokenInfo,
   getHolders as getBscscanHolders,
   checkHASConnection,
+  scrapePages,
+  getDBStats,
 } from '../services/bscscanScraperService';
 
 // GET /api/bscscan/status — HAS 连接状态
@@ -997,12 +999,36 @@ router.get('/bscscan/status', async (_req: Request, res: Response) => {
   }
 });
 
-// GET /api/bscscan/token-transfers/:contractAddress — 代币交易记录
+// GET /api/bscscan/token-transfers/:contractAddress — 代币交易记录（先查库，后台增量同步）
 router.get('/bscscan/token-transfers/:contractAddress', async (req: Request, res: Response) => {
   try {
     const contract = String(req.params.contractAddress);
     const page = parseInt(qs(req.query.page) || '1') || 1;
-    const result = await getBscscanTokenTransfers(contract, page);
+    const limit = parseInt(qs(req.query.limit) || '25') || 25;
+    const result = await getBscscanTokenTransfers(contract, page, limit);
+    res.json({ code: 0, data: result });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// POST /api/bscscan/scrape/:contractAddress — 手动触发抓取入库
+router.post('/bscscan/scrape/:contractAddress', async (req: Request, res: Response) => {
+  try {
+    const contract = String(req.params.contractAddress);
+    const pages = parseInt(qs(req.query.pages) || '5') || 5;
+    const result = await scrapePages(contract, pages);
+    res.json({ code: 0, data: result });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/bscscan/stats/:contractAddress — 数据库统计
+router.get('/bscscan/stats/:contractAddress', (req: Request, res: Response) => {
+  try {
+    const contract = String(req.params.contractAddress);
+    const result = getDBStats(contract);
     res.json({ code: 0, data: result });
   } catch (err: any) {
     res.status(500).json({ code: -1, message: err.message });

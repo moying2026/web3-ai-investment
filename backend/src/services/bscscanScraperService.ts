@@ -1,12 +1,22 @@
 // BscScan 链上数据抓取服务
 // 通过桌面自动化工作台 (HAS:9223) 打开 BscScan 页面，从 iframe 提取结构化数据
 // 不依赖 API Key，使用真实浏览器环境
+// 支持数据库持久化 + 增量同步
+
+import { db } from '../db/database';
 
 const HAS_BASE = 'http://127.0.0.1:9223';
 const BSCSCAN_BASE = 'https://bscscan.com';
 const CHAIN_DATA_TAB_ID = 'tab-1780921639939-2';
 
-// 通用 HAS execute 调用
+interface SqliteStatement {
+  run(...params: any[]): { changes: number };
+  get(...params: any[]): any;
+  all(...params: any[]): any[];
+}
+
+// ============ HAS 通信 ============
+
 async function hasExecute(tabId: string, script: string): Promise<any> {
   const resp = await fetch(`${HAS_BASE}/execute`, {
     method: 'POST',
@@ -19,7 +29,6 @@ async function hasExecute(tabId: string, script: string): Promise<any> {
   return data.result ? JSON.parse(data.result) : null;
 }
 
-// 导航到指定页面并等待加载
 async function navigateTo(tabId: string, url: string, waitMs: number = 5000): Promise<void> {
   const resp = await fetch(`${HAS_BASE}/execute`, {
     method: 'POST',
@@ -29,16 +38,15 @@ async function navigateTo(tabId: string, url: string, waitMs: number = 5000): Pr
   await new Promise(r => setTimeout(r, waitMs));
 }
 
-// 等待 iframe 内表格加载完成
 async function waitForTable(tabId: string, maxWait: number = 15000): Promise<boolean> {
   const start = Date.now();
   while (Date.now() - start < maxWait) {
     try {
       const result = await hasExecute(tabId, `(function(){
         var iframe=document.querySelector('#tokentxnsiframe');
-        if(!iframe) return JSON.stringify({ready:false,reason:'no_iframe'});
+        if(!iframe) return JSON.stringify({ready:false});
         var doc=iframe.contentDocument;
-        if(!doc) return JSON.stringify({ready:false,reason:'no_doc'});
+        if(!doc) return JSON.stringify({ready:false});
         var rows=doc.querySelectorAll('table tbody tr');
         return JSON.stringify({ready:rows.length>0,count:rows.length});
       })()`);
@@ -49,9 +57,8 @@ async function waitForTable(tabId: string, maxWait: number = 15000): Promise<boo
   return false;
 }
 
-// 切换 iframe 到指定页码（通过修改 iframe src 的 p 参数）
 async function goToPage(tabId: string, page: number): Promise<void> {
-  const resp = await fetch(`${HAS_BASE}/execute`, {
+  await fetch(`${HAS_BASE}/execute`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ tabId, script: `(function(){ var iframe=document.querySelector('#tokentxnsiframe'); if(!iframe) return; iframe.src=iframe.src.replace(/&p=[0-9]+/,'&p=${page}'); })()` }),
@@ -59,7 +66,6 @@ async function goToPage(tabId: string, page: number): Promise<void> {
   await new Promise(r => setTimeout(r, 3000));
 }
 
-// 获取 iframe 内总页数
 async function getTotalPages(tabId: string): Promise<number> {
   const result = await hasExecute(tabId, `(function(){
     var iframe=document.querySelector('#tokentxnsiframe');
@@ -73,35 +79,11 @@ async function getTotalPages(tabId: string): Promise<number> {
   return result?.total || 0;
 }
 
-// ============ 公开接口 ============
-
-// 获取代币交易记录（支持分页）
-export async function getTokenTransfers(contractAddress: string, page: number = 1): Promise<any> {
-  const url = `${BSCSCAN_BASE}/token/${contractAddress}#transactions`;
-
-  // 首次导航到代币页面
-  await navigateTo(CHAIN_DATA_TAB_ID, url);
-
-  // 等待 iframe 表格加载
-  const ready = await waitForTable(CHAIN_DATA_TAB_ID);
-  if (!ready) {
-    return { error: 'Table not loaded after waiting', contract: contractAddress };
-  }
-
-  // 如果不是第 1 页，需要翻页
-  if (page > 1) {
-    await goToPage(CHAIN_DATA_TAB_ID, page);
-    // 等待新页面加载
-    await new Promise(r => setTimeout(r, 2000));
-  }
-
-  // 获取总页数
-  const totalPages = await getTotalPages(CHAIN_DATA_TAB_ID);
-
-  // 提取表格数据
-  const data = await hasExecute(CHAIN_DATA_TAB_ID, `(function(){
+// 从 iframe 提取当前页的交易记录
+async function extractTransactions(tabId: string): Promise<any[]> {
+  const data = await hasExecute(tabId, `(function(){
     var iframe=document.querySelector('#tokentxnsiframe');
-    if(!iframe) return JSON.stringify({error:'iframe not found'});
+    if(!iframe) return JSON.stringify({transactions:[]});
     var doc=iframe.contentDocument;
     var rows=doc.querySelectorAll('table tbody tr');
     var result=[...rows].map(function(r){
@@ -117,16 +99,160 @@ export async function getTokenTransfers(contractAddress: string, page: number = 
         amount: c[11]?.innerText?.trim() || '',
       };
     });
-    return JSON.stringify({count:result.length,transactions:result});
+    return JSON.stringify({transactions:result});
   })()`);
+  return data?.transactions || [];
+}
+
+// ============ 数据库操作 ============
+
+// 插入交易记录（INSERT OR IGNORE 去重）
+function insertTransactions(chain: string, contractAddress: string, txs: any[]): number {
+  const stmt = db.prepare(`INSERT OR IGNORE INTO onchain_transactions
+    (chain, contract_address, tx_hash, method, block_number, timestamp, from_address, to_address, amount, source)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'bscscan_scrape')`) as SqliteStatement;
+  let inserted = 0;
+  for (const tx of txs) {
+    const blockNum = parseInt(tx.block) || 0;
+    const result = stmt.run(chain, contractAddress, tx.hash, tx.method, blockNum, tx.timestamp, tx.from, tx.to, tx.amount);
+    inserted += result.changes;
+  }
+  return inserted;
+}
+
+// 查询数据库中的交易记录（支持分页）
+function queryTransactions(chain: string, contractAddress: string, page: number = 1, limit: number = 25): any {
+  const offset = (page - 1) * limit;
+  const countRow = (db.prepare(`SELECT COUNT(*) as total FROM onchain_transactions WHERE chain = ? AND contract_address = ?`) as SqliteStatement).get(chain, contractAddress);
+  const total = countRow?.total || 0;
+  const rows = (db.prepare(`SELECT * FROM onchain_transactions WHERE chain = ? AND contract_address = ? ORDER BY block_number DESC, id DESC LIMIT ? OFFSET ?`) as SqliteStatement).all(chain, contractAddress, limit, offset);
+  return {
+    transactions: rows,
+    total: total,
+    page: page,
+    limit: limit,
+    total_pages: Math.ceil(total / limit),
+  };
+}
+
+// 获取数据库中该合约最新的 block_number
+function getLatestBlockNumber(chain: string, contractAddress: string): number {
+  const row = (db.prepare(`SELECT MAX(block_number) as max_block FROM onchain_transactions WHERE chain = ? AND contract_address = ?`) as SqliteStatement).get(chain, contractAddress);
+  return row?.max_block || 0;
+}
+
+// ============ 公开接口 ============
+
+// 获取代币交易记录（先查数据库，后台增量同步）
+export async function getTokenTransfers(contractAddress: string, page: number = 1, limit: number = 25): Promise<any> {
+  // 1. 先查数据库
+  const dbResult = queryTransactions('bsc', contractAddress, page, limit);
+
+  // 2. 如果数据库无记录，触发初始抓取（5 页）
+  if (dbResult.total === 0) {
+    // 异步执行初始抓取，不阻塞响应
+    initialScrape(contractAddress).catch(err => {
+      console.error(`[BscScan] Initial scrape failed for ${contractAddress}:`, err.message);
+    });
+    return {
+      contract: contractAddress,
+      chain: 'bsc',
+      source: 'db',
+      ...dbResult,
+      sync_status: 'initial_scraping',
+    };
+  }
+
+  // 3. 后台增量同步（不阻塞响应）
+  incrementalSync(contractAddress).catch(err => {
+    console.error(`[BscScan] Incremental sync failed for ${contractAddress}:`, err.message);
+  });
 
   return {
     contract: contractAddress,
     chain: 'bsc',
-    source: 'bscscan_scrape',
-    page: page,
-    total_pages: totalPages,
-    ...data,
+    source: 'db',
+    ...dbResult,
+    sync_status: 'syncing',
+  };
+}
+
+// 初始抓取（5 页 = 125 条）
+async function initialScrape(contractAddress: string): Promise<void> {
+  console.log(`[BscScan] Initial scrape for ${contractAddress}...`);
+  const url = `${BSCSCAN_BASE}/token/${contractAddress}#transactions`;
+  await navigateTo(CHAIN_DATA_TAB_ID, url);
+  const ready = await waitForTable(CHAIN_DATA_TAB_ID);
+  if (!ready) {
+    console.error(`[BscScan] Table not loaded for ${contractAddress}`);
+    return;
+  }
+
+  let totalInserted = 0;
+  for (let p = 1; p <= 5; p++) {
+    if (p > 1) {
+      await goToPage(CHAIN_DATA_TAB_ID, p);
+    }
+    const txs = await extractTransactions(CHAIN_DATA_TAB_ID);
+    if (txs.length === 0) break;
+    const inserted = insertTransactions('bsc', contractAddress, txs);
+    totalInserted += inserted;
+    console.log(`[BscScan] Page ${p}: ${txs.length} rows, ${inserted} new inserted`);
+  }
+  console.log(`[BscScan] Initial scrape done: ${totalInserted} records inserted for ${contractAddress}`);
+}
+
+// 增量同步（抓取比数据库最新 block 更新的记录）
+async function incrementalSync(contractAddress: string): Promise<void> {
+  const latestBlock = getLatestBlockNumber('bsc', contractAddress);
+  if (latestBlock === 0) return; // 无记录，不触发同步
+
+  console.log(`[BscScan] Incremental sync for ${contractAddress} from block ${latestBlock}...`);
+  const url = `${BSCSCAN_BASE}/token/${contractAddress}#transactions`;
+  await navigateTo(CHAIN_DATA_TAB_ID, url);
+  const ready = await waitForTable(CHAIN_DATA_TAB_ID);
+  if (!ready) return;
+
+  // 只抓取第 1 页（最新记录）
+  const txs = await extractTransactions(CHAIN_DATA_TAB_ID);
+  let newCount = 0;
+  for (const tx of txs) {
+    const blockNum = parseInt(tx.block) || 0;
+    if (blockNum > latestBlock) {
+      const inserted = insertTransactions('bsc', contractAddress, [tx]);
+      newCount += inserted;
+    }
+  }
+  if (newCount > 0) {
+    console.log(`[BscScan] Incremental sync: ${newCount} new records for ${contractAddress}`);
+  }
+}
+
+// 手动触发抓取（供 API 调用）
+export async function scrapePages(contractAddress: string, pages: number = 5): Promise<any> {
+  const url = `${BSCSCAN_BASE}/token/${contractAddress}#transactions`;
+  await navigateTo(CHAIN_DATA_TAB_ID, url);
+  const ready = await waitForTable(CHAIN_DATA_TAB_ID);
+  if (!ready) return { error: 'Table not loaded' };
+
+  let totalInserted = 0;
+  const results = [];
+  for (let p = 1; p <= pages; p++) {
+    if (p > 1) await goToPage(CHAIN_DATA_TAB_ID, p);
+    const txs = await extractTransactions(CHAIN_DATA_TAB_ID);
+    if (txs.length === 0) break;
+    const inserted = insertTransactions('bsc', contractAddress, txs);
+    totalInserted += inserted;
+    results.push({ page: p, rows: txs.length, inserted });
+  }
+
+  const dbResult = queryTransactions('bsc', contractAddress, 1, 25);
+  return {
+    contract: contractAddress,
+    scraped_pages: pages,
+    total_inserted: totalInserted,
+    page_results: results,
+    db_total: dbResult.total,
   };
 }
 
@@ -156,12 +282,7 @@ export async function getTokenInfo(contractAddress: string): Promise<any> {
     });
   })()`);
 
-  return {
-    contract: contractAddress,
-    chain: 'bsc',
-    source: 'bscscan_scrape',
-    ...data,
-  };
+  return { contract: contractAddress, chain: 'bsc', source: 'bscscan_scrape', ...data };
 }
 
 // 获取持有人数据
@@ -187,12 +308,7 @@ export async function getHolders(contractAddress: string): Promise<any> {
     return JSON.stringify({count:holders.length,holders:holders});
   })()`);
 
-  return {
-    contract: contractAddress,
-    chain: 'bsc',
-    source: 'bscscan_scrape',
-    ...data,
-  };
+  return { contract: contractAddress, chain: 'bsc', source: 'bscscan_scrape', ...data };
 }
 
 // 检查 HAS 连接状态
@@ -205,13 +321,21 @@ export async function checkHASConnection(): Promise<any> {
     return {
       connected: true,
       has_tabs: data.tabs?.length || 0,
-      chain_data_tab: chainTab ? {
-        id: chainTab.id,
-        url: chainTab.url,
-        status: chainTab.status,
-      } : null,
+      chain_data_tab: chainTab ? { id: chainTab.id, url: chainTab.url, status: chainTab.status } : null,
     };
   } catch (err: any) {
     return { connected: false, error: err.message };
   }
+}
+
+// 查询数据库统计
+export function getDBStats(contractAddress: string): any {
+  const total = (db.prepare(`SELECT COUNT(*) as c FROM onchain_transactions WHERE chain='bsc' AND contract_address=?`) as SqliteStatement).get(contractAddress);
+  const latest = (db.prepare(`SELECT MAX(block_number) as max_block, MIN(block_number) as min_block FROM onchain_transactions WHERE chain='bsc' AND contract_address=?`) as SqliteStatement).get(contractAddress);
+  return {
+    contract: contractAddress,
+    total_records: total?.c || 0,
+    latest_block: latest?.max_block || 0,
+    oldest_block: latest?.min_block || 0,
+  };
 }

@@ -303,6 +303,31 @@ export function initDatabase(): void {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_tfs_creator ON token_first_seen(creator_address)`);
 
   console.log('[DB] 数据库初始化完成:', DB_PATH);
+
+  // ============ 链上交易记录表 ============
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS onchain_transactions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      chain TEXT NOT NULL DEFAULT 'bsc',
+      contract_address TEXT NOT NULL,
+      tx_hash TEXT NOT NULL,
+      method TEXT,
+      block_number INTEGER,
+      timestamp TEXT NOT NULL,
+      from_address TEXT,
+      to_address TEXT,
+      amount TEXT,
+      token_symbol TEXT,
+      token_name TEXT,
+      source TEXT DEFAULT 'bscscan_scrape',
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(chain, tx_hash, contract_address)
+    )
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_onchain_tx_contract ON onchain_transactions(chain, contract_address)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_onchain_tx_block ON onchain_transactions(block_number)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_onchain_tx_time ON onchain_transactions(timestamp)`);
+  console.log('[DB] onchain_transactions 表初始化完成');
 }
 
 export { db };
