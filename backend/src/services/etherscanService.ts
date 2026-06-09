@@ -15,7 +15,8 @@ const API_KEY = process.env.ETHERSCAN_V2_KEY || '';
 const BASE_URL = process.env.ETHERSCAN_V2_BASE_URL || 'https://api.etherscan.io/v2/api';
 
 // 免费 Key 支持的模块（BSC 等非 ETH 链仅支持 contract 模块）
-const FREE_KEY_MODULES = new Set(['contract']);
+// 注意：如升级付费计划，将此 Set 清空即可解锁全部模块
+const FREE_KEY_RESTRICTED_MODULES = new Set(['account', 'gastracker', 'proxy']);
 
 // 需要付费的链（非 ETH 主网）
 const PAID_CHAINS = new Set(['56', '8453', '137', '42161', '10', '43114']);
@@ -23,8 +24,9 @@ const PAID_CHAINS = new Set(['56', '8453', '137', '42161', '10', '43114']);
 function isModuleAvailable(chainId: string, module: string): boolean {
   // ETH 主网：所有模块都可用
   if (chainId === '1') return true;
-  // 其他链：只有 contract 模块可用
-  return FREE_KEY_MODULES.has(module);
+  // 其他链 + 免费 Key：受限模块不可用（升级后移除此限制）
+  if (PAID_CHAINS.has(chainId) && FREE_KEY_RESTRICTED_MODULES.has(module)) return false;
+  return true;
 }
 
 // 链 ID 映射
