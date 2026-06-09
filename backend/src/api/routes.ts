@@ -979,6 +979,34 @@ router.post('/system/toggle-all', (req: Request, res: Response) => {
   }
 });
 
+// ============ 多 Agent 讨论 ============
+import { runDiscussion, getDiscussionHistory } from '../services/agentDiscussionService';
+
+// POST /api/agents/discuss/:chain/:contractAddress — 启动代币讨论
+router.post('/agents/discuss/:chain/:contractAddress', async (req: Request, res: Response) => {
+  try {
+    const chain = String(req.params.chain);
+    const contract = String(req.params.contractAddress);
+    const result = await runDiscussion(chain, contract);
+    res.json({ code: 0, data: result });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/agents/discuss/:chain/:contractAddress/history — 讨论历史
+router.get('/agents/discuss/:chain/:contractAddress/history', (req: Request, res: Response) => {
+  try {
+    const chain = String(req.params.chain);
+    const contract = String(req.params.contractAddress);
+    const limit = parseInt(qs(req.query.limit) || '10') || 10;
+    const result = getDiscussionHistory(chain, contract, limit);
+    res.json({ code: 0, data: result });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
 // ============ BscScan 链上数据抓取（通过 HAS 桌面自动化） ============
 import {
   getTokenTransfers as getBscscanTokenTransfers,
@@ -1017,7 +1045,8 @@ router.post('/bscscan/scrape/:contractAddress', async (req: Request, res: Respon
   try {
     const contract = String(req.params.contractAddress);
     const pages = parseInt(qs(req.query.pages) || '5') || 5;
-    const result = await scrapePages(contract, pages);
+    const order = qs(req.query.order) || 'asc';
+    const result = await scrapePages(contract, pages, order);
     res.json({ code: 0, data: result });
   } catch (err: any) {
     res.status(500).json({ code: -1, message: err.message });

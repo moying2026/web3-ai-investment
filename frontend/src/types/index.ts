@@ -245,3 +245,25 @@ export interface SimStats {
   worstTrade: Trade;
   dailyPnl: { date: string; pnl: number }[];
 }
+
+// ===== AI 讨论面板类型 =====
+
+// Agent 发言
+export interface DiscussionMessage {
+  agent_type: 'risk' | 'market' | 'issuer' | 'onchain' | 'decision';
+  content: string;
+  score: number;
+  risk_flags?: string[];
+  highlights?: string[];
+}
+
+// 讨论会话
+export interface DiscussionSession {
+  session_id: string;
+  chain: string;
+  contract: string;
+  messages: DiscussionMessage[];
+  final_recommendation: 'BUY' | 'HOLD' | 'WATCH' | 'AVOID';
+  final_score: number;
+  created_at: string;
+}

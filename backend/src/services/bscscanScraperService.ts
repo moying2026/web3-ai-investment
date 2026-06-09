@@ -229,27 +229,48 @@ async function incrementalSync(contractAddress: string): Promise<void> {
 }
 
 // 手动触发抓取（供 API 调用）
-export async function scrapePages(contractAddress: string, pages: number = 5): Promise<any> {
+export async function scrapePages(contractAddress: string, pages: number = 5, order: string = 'asc'): Promise<any> {
   const url = `${BSCSCAN_BASE}/token/${contractAddress}#transactions`;
   await navigateTo(CHAIN_DATA_TAB_ID, url);
   const ready = await waitForTable(CHAIN_DATA_TAB_ID);
   if (!ready) return { error: 'Table not loaded' };
 
+  // 获取总页数
+  const totalPages = await getTotalPages(CHAIN_DATA_TAB_ID);
+  const actualPages = Math.min(pages, totalPages);
+
+  // 倒序抓取：从最后一页开始
+  const startPage = order === 'desc' ? totalPages : 1;
+  const endPage = order === 'desc' ? Math.max(1, totalPages - pages + 1) : actualPages;
+  const step = order === 'desc' ? -1 : 1;
+
   let totalInserted = 0;
   const results = [];
-  for (let p = 1; p <= pages; p++) {
-    if (p > 1) await goToPage(CHAIN_DATA_TAB_ID, p);
+  let p = startPage;
+  while (order === 'desc' ? p >= endPage : p <= endPage) {
+    if (p === startPage) {
+      // 第一页需要导航
+      await goToPage(CHAIN_DATA_TAB_ID, p);
+    } else {
+      await goToPage(CHAIN_DATA_TAB_ID, p);
+    }
     const txs = await extractTransactions(CHAIN_DATA_TAB_ID);
-    if (txs.length === 0) break;
+    if (txs.length === 0) { p += step; continue; }
     const inserted = insertTransactions('bsc', contractAddress, txs);
     totalInserted += inserted;
     results.push({ page: p, rows: txs.length, inserted });
+    console.log(`[BscScan] Page ${p}/${totalPages}: ${txs.length} rows, ${inserted} new`);
+    p += step;
+    // 间隔 3-5 秒避免限流
+    await new Promise(r => setTimeout(r, 3000 + Math.random() * 2000));
   }
 
   const dbResult = queryTransactions('bsc', contractAddress, 1, 25);
   return {
     contract: contractAddress,
-    scraped_pages: pages,
+    order: order,
+    total_pages: totalPages,
+    scraped_pages: results.length,
     total_inserted: totalInserted,
     page_results: results,
     db_total: dbResult.total,

@@ -16,6 +16,7 @@ import ReactECharts from 'echarts-for-react';
 import type { Token, Stats } from '../../types';
 import api, { tokenApi, statsApi, simApi, auditApi, dynamicApi, tokenAnalyzerApi, issuerRiskApi, createNewTokenSSE } from '../../services/api';
 import { formatPrice, formatVolume, formatSupply, formatPercent } from '../../utils/format';
+import AIDiscussionPanel from '../../components/AIDiscussionPanel';
 
 // 筛选参数类型
 interface FilterParams {
@@ -1342,8 +1343,12 @@ const Dashboard: React.FC = () => {
                 },
                 {
                   key: 'Tab3',
-                  label: 'Tab3',
-                  children: <div style={{ padding: '8px 0', color: '#8c8c8c', textAlign: 'center' }}>待陈哥指定内容</div>,
+                  label: 'AI 讨论',
+                  children: <div style={{ overflowY: 'auto', height: 460 }}>
+                    {selectedToken
+                      ? <AIDiscussionPanel chain={selectedToken.chain} address={selectedToken.address} />
+                      : <div style={{ padding: '40px 0', color: '#8c8c8c', textAlign: 'center' }}>请点击左侧代币启动 AI 讨论</div>}
+                  </div>,
                 },
                 {
                   key: 'Tab4',

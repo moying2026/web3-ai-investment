@@ -131,4 +131,15 @@ export const smartMoneyApi = {
     api.get<any, PaginatedResponse<any>>('/smart-money/signals', { params }).catch(() => ({ data: [], total: 0, page: 1, pageSize: 20 })),
 };
 
+// ===== AI 讨论面板 API =====
+
+export const discussionApi = {
+  /** 触发多 Agent 讨论 */
+  start: (chain: string, contract: string) =>
+    api.post<any, any>(`/agents/discuss/${chain}/${contract}`),
+  /** 获取历史讨论记录 */
+  getList: (chain: string, contract: string) =>
+    api.get<any, any[]>(`/agents/discussions/${chain}/${contract}`).catch(() => []),
+};
+
 export default api;
