@@ -979,6 +979,58 @@ router.post('/system/toggle-all', (req: Request, res: Response) => {
   }
 });
 
+// ============ BscScan 链上数据抓取（通过 HAS 桌面自动化） ============
+import {
+  getTokenTransfers as getBscscanTokenTransfers,
+  getTokenInfo as getBscscanTokenInfo,
+  getHolders as getBscscanHolders,
+  checkHASConnection,
+} from '../services/bscscanScraperService';
+
+// GET /api/bscscan/status — HAS 连接状态
+router.get('/bscscan/status', async (_req: Request, res: Response) => {
+  try {
+    const result = await checkHASConnection();
+    res.json({ code: 0, data: result });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/bscscan/token-transfers/:contractAddress — 代币交易记录
+router.get('/bscscan/token-transfers/:contractAddress', async (req: Request, res: Response) => {
+  try {
+    const contract = String(req.params.contractAddress);
+    const page = parseInt(qs(req.query.page) || '1') || 1;
+    const result = await getBscscanTokenTransfers(contract, page);
+    res.json({ code: 0, data: result });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/bscscan/token-info/:contractAddress — 代币基本信息
+router.get('/bscscan/token-info/:contractAddress', async (req: Request, res: Response) => {
+  try {
+    const contract = String(req.params.contractAddress);
+    const result = await getBscscanTokenInfo(contract);
+    res.json({ code: 0, data: result });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/bscscan/holders/:contractAddress — 持有人数据
+router.get('/bscscan/holders/:contractAddress', async (req: Request, res: Response) => {
+  try {
+    const contract = String(req.params.contractAddress);
+    const result = await getBscscanHolders(contract);
+    res.json({ code: 0, data: result });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
 // ============ Etherscan API V2 链上数据查询 ============
 import {
   getContractVerificationStatus,
