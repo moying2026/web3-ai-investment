@@ -2,12 +2,8 @@
 // 通过桌面自动化工作台 (HAS:9223) 打开 BscScan 页面，从 iframe 提取结构化数据
 // 不依赖 API Key，使用真实浏览器环境
 
-import { db } from '../db/database';
-
 const HAS_BASE = 'http://127.0.0.1:9223';
 const BSCSCAN_BASE = 'https://bscscan.com';
-
-// 链上数据 tab ID（桌面自动化工作台中预设的 tab）
 const CHAIN_DATA_TAB_ID = 'tab-1780921639939-2';
 
 // 通用 HAS execute 调用
@@ -24,17 +20,13 @@ async function hasExecute(tabId: string, script: string): Promise<any> {
 }
 
 // 导航到指定页面并等待加载
-async function navigateTo(tabId: string, url: string): Promise<void> {
+async function navigateTo(tabId: string, url: string, waitMs: number = 5000): Promise<void> {
   const resp = await fetch(`${HAS_BASE}/execute`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      tabId,
-      script: `(function(){ window.location.href='${url}'; return 'navigating'; })()`,
-    }),
+    body: JSON.stringify({ tabId, script: `window.location.href='${url}'` }),
   });
-  // 等待页面加载
-  await new Promise(r => setTimeout(r, 5000));
+  await new Promise(r => setTimeout(r, waitMs));
 }
 
 // 等待 iframe 内表格加载完成
@@ -43,11 +35,11 @@ async function waitForTable(tabId: string, maxWait: number = 15000): Promise<boo
   while (Date.now() - start < maxWait) {
     try {
       const result = await hasExecute(tabId, `(function(){
-        const iframe=document.querySelector('#tokentxnsiframe');
+        var iframe=document.querySelector('#tokentxnsiframe');
         if(!iframe) return JSON.stringify({ready:false,reason:'no_iframe'});
-        const doc=iframe.contentDocument;
+        var doc=iframe.contentDocument;
         if(!doc) return JSON.stringify({ready:false,reason:'no_doc'});
-        const rows=doc.querySelectorAll('table tbody tr');
+        var rows=doc.querySelectorAll('table tbody tr');
         return JSON.stringify({ready:rows.length>0,count:rows.length});
       })()`);
       if (result?.ready) return true;
@@ -57,43 +49,63 @@ async function waitForTable(tabId: string, maxWait: number = 15000): Promise<boo
   return false;
 }
 
-// 解析交易记录行
-function parseTransactionRows(rows: any[]): any[] {
-  return rows.map(r => ({
-    tx_hash: r.hash || '',
-    method: r.method || '',
-    block: r.block || '',
-    timestamp: r.timestamp || '',
-    age: r.age || '',
-    from: r.from || '',
-    to: r.to || '',
-    amount: r.amount || '',
-  }));
+// 切换 iframe 到指定页码（通过修改 iframe src 的 p 参数）
+async function goToPage(tabId: string, page: number): Promise<void> {
+  const resp = await fetch(`${HAS_BASE}/execute`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tabId, script: `(function(){ var iframe=document.querySelector('#tokentxnsiframe'); if(!iframe) return; iframe.src=iframe.src.replace(/&p=[0-9]+/,'&p=${page}'); })()` }),
+  });
+  await new Promise(r => setTimeout(r, 3000));
+}
+
+// 获取 iframe 内总页数
+async function getTotalPages(tabId: string): Promise<number> {
+  const result = await hasExecute(tabId, `(function(){
+    var iframe=document.querySelector('#tokentxnsiframe');
+    if(!iframe) return JSON.stringify({total:0});
+    var doc=iframe.contentDocument;
+    if(!doc) return JSON.stringify({total:0});
+    var text=doc.body?.innerText||'';
+    var m=text.match(/Page\\s+[0-9]+\\s+of\\s+([0-9,]+)/i);
+    return JSON.stringify({total:m?parseInt(m[1].replace(/,/g,'')):0});
+  })()`);
+  return result?.total || 0;
 }
 
 // ============ 公开接口 ============
 
-// 获取代币交易记录
+// 获取代币交易记录（支持分页）
 export async function getTokenTransfers(contractAddress: string, page: number = 1): Promise<any> {
   const url = `${BSCSCAN_BASE}/token/${contractAddress}#transactions`;
 
-  // 导航到目标页面
+  // 首次导航到代币页面
   await navigateTo(CHAIN_DATA_TAB_ID, url);
 
-  // 等待表格加载
+  // 等待 iframe 表格加载
   const ready = await waitForTable(CHAIN_DATA_TAB_ID);
   if (!ready) {
     return { error: 'Table not loaded after waiting', contract: contractAddress };
   }
 
+  // 如果不是第 1 页，需要翻页
+  if (page > 1) {
+    await goToPage(CHAIN_DATA_TAB_ID, page);
+    // 等待新页面加载
+    await new Promise(r => setTimeout(r, 2000));
+  }
+
+  // 获取总页数
+  const totalPages = await getTotalPages(CHAIN_DATA_TAB_ID);
+
   // 提取表格数据
   const data = await hasExecute(CHAIN_DATA_TAB_ID, `(function(){
-    const iframe=document.querySelector('#tokentxnsiframe');
+    var iframe=document.querySelector('#tokentxnsiframe');
     if(!iframe) return JSON.stringify({error:'iframe not found'});
-    const doc=iframe.contentDocument;
-    const rows=doc.querySelectorAll('table tbody tr');
-    const result=[...rows].map(r=>{
-      const c=r.querySelectorAll('td');
+    var doc=iframe.contentDocument;
+    var rows=doc.querySelectorAll('table tbody tr');
+    var result=[...rows].map(function(r){
+      var c=r.querySelectorAll('td');
       return {
         hash: c[1]?.querySelector('a')?.innerText?.trim() || c[1]?.innerText?.trim() || '',
         method: c[2]?.innerText?.trim() || '',
@@ -112,6 +124,8 @@ export async function getTokenTransfers(contractAddress: string, page: number = 
     contract: contractAddress,
     chain: 'bsc',
     source: 'bscscan_scrape',
+    page: page,
+    total_pages: totalPages,
     ...data,
   };
 }
@@ -123,25 +137,17 @@ export async function getTokenInfo(contractAddress: string): Promise<any> {
   await new Promise(r => setTimeout(r, 3000));
 
   const data = await hasExecute(CHAIN_DATA_TAB_ID, `(function(){
-    // 从页面提取代币基本信息
-    const title = document.querySelector('.card-header h4, .text-muted.mb-1')?.innerText || '';
-    // 代币名称和符号通常在页面标题区域
-    const nameEl = document.querySelector('.hash-tag.text-truncate');
-    // 持有人数
-    const holderText = document.body.innerText;
-    const holderMatch = holderText.match(/holders[:\\s]*([\\d,]+)/i);
-    // 总供应量
-    const supplyMatch = holderText.match(/total\\s*supply[:\\s]*([\\d,.]+)/i);
-
-    // 从页面顶部提取代币概览信息
-    const overviewCards = document.querySelectorAll('.card .row .col');
-    const overview = {};
-    overviewCards.forEach(card => {
-      const label = card.querySelector('.text-muted, small')?.innerText?.trim();
-      const value = card.querySelector('.fw-medium, .fs-5, h6')?.innerText?.trim();
+    var holderText = document.body.innerText;
+    var holderMatch = holderText.match(/holders[:\\s]*([\\d,]+)/i);
+    var supplyMatch = holderText.match(/total\\s*supply[:\\s]*([\\d,.]+)/i);
+    var overviewCards = document.querySelectorAll('.card .row .col');
+    var overview = {};
+    overviewCards.forEach(function(card) {
+      var label = card.querySelector('.text-muted, small')?.innerText?.trim();
+      var value = card.querySelector('.fw-medium, .fs-5, h6')?.innerText?.trim();
       if(label && value) overview[label] = value;
     });
-
+    var title = document.querySelector('h1, .card-header h4')?.innerText?.trim() || '';
     return JSON.stringify({
       name: title,
       holder_count: holderMatch ? holderMatch[1] : null,
@@ -162,17 +168,15 @@ export async function getTokenInfo(contractAddress: string): Promise<any> {
 export async function getHolders(contractAddress: string): Promise<any> {
   const url = `${BSCSCAN_BASE}/token/${contractAddress}#balances`;
   await navigateTo(CHAIN_DATA_TAB_ID, url);
-
-  // 等待表格加载（balances tab 可能需要额外时间）
   await new Promise(r => setTimeout(r, 6000));
 
   const data = await hasExecute(CHAIN_DATA_TAB_ID, `(function(){
-    const iframe=document.querySelector('#tokentxnsiframe');
+    var iframe=document.querySelector('#tokentxnsiframe');
     if(!iframe) return JSON.stringify({error:'iframe not found'});
-    const doc=iframe.contentDocument;
-    const rows=doc.querySelectorAll('table tbody tr');
-    const holders=[...rows].map(r=>{
-      const c=r.querySelectorAll('td');
+    var doc=iframe.contentDocument;
+    var rows=doc.querySelectorAll('table tbody tr');
+    var holders=[...rows].map(function(r){
+      var c=r.querySelectorAll('td');
       return {
         rank: c[0]?.innerText?.trim() || '',
         address: c[1]?.innerText?.trim() || '',
