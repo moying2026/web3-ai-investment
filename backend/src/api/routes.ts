@@ -978,3 +978,124 @@ router.post('/system/toggle-all', (req: Request, res: Response) => {
     res.status(500).json({ code: -1, message: err.message });
   }
 });
+
+// ============ Etherscan API V2 链上数据查询 ============
+import {
+  getContractVerificationStatus,
+  getTransactionDetail,
+  getTokenBalance,
+  getNativeBalance,
+  getGasPrice,
+  getAccountTransactions,
+  getTokenTransfers,
+  getInternalTransactions,
+  getLatestBlockNumber,
+  getApiKeyStatus,
+} from '../services/etherscanService';
+
+// GET /api/etherscan/status — API Key 状态
+router.get('/etherscan/status', (_req: Request, res: Response) => {
+  try {
+    res.json({ code: 0, data: getApiKeyStatus() });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/etherscan/contract/:chain/:address — 合约验证状态
+router.get('/etherscan/contract/:chain/:address', async (req: Request, res: Response) => {
+  try {
+    const result = await getContractVerificationStatus(String(req.params.chain), String(req.params.address));
+    res.json({ code: 0, data: result });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/etherscan/tx/:chain/:hash — 交易详情
+router.get('/etherscan/tx/:chain/:hash', async (req: Request, res: Response) => {
+  try {
+    const result = await getTransactionDetail(String(req.params.chain), String(req.params.hash));
+    if (!result) { res.status(404).json({ code: -1, message: '交易未找到' }); return; }
+    res.json({ code: 0, data: result });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/etherscan/balance/:chain/:address — 原生代币余额
+router.get('/etherscan/balance/:chain/:address', async (req: Request, res: Response) => {
+  try {
+    const result = await getNativeBalance(String(req.params.chain), String(req.params.address));
+    res.json({ code: 0, data: result });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/etherscan/token-balance/:chain/:wallet/:contract — 代币余额
+router.get('/etherscan/token-balance/:chain/:wallet/:contract', async (req: Request, res: Response) => {
+  try {
+    const result = await getTokenBalance(String(req.params.chain), String(req.params.wallet), String(req.params.contract));
+    res.json({ code: 0, data: result });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/etherscan/gas/:chain — Gas 价格
+router.get('/etherscan/gas/:chain', async (req: Request, res: Response) => {
+  try {
+    const result = await getGasPrice(String(req.params.chain));
+    res.json({ code: 0, data: result });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/etherscan/txs/:chain/:address — 账户交易列表
+router.get('/etherscan/txs/:chain/:address', async (req: Request, res: Response) => {
+  try {
+    const page = parseInt(qs(req.query.page) || '1') || 1;
+    const offset = parseInt(qs(req.query.offset) || '10') || 10;
+    const result = await getAccountTransactions(String(req.params.chain), String(req.params.address), page, offset);
+    res.json({ code: 0, data: result });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/etherscan/token-transfers/:chain/:address — 代币转账记录
+router.get('/etherscan/token-transfers/:chain/:address', async (req: Request, res: Response) => {
+  try {
+    const page = parseInt(qs(req.query.page) || '1') || 1;
+    const offset = parseInt(qs(req.query.offset) || '10') || 10;
+    const contract = qs(req.query.contract);
+    const result = await getTokenTransfers(String(req.params.chain), String(req.params.address), contract, page, offset);
+    res.json({ code: 0, data: result });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/etherscan/internal-txs/:chain/:address — 合约内部交易
+router.get('/etherscan/internal-txs/:chain/:address', async (req: Request, res: Response) => {
+  try {
+    const page = parseInt(qs(req.query.page) || '1') || 1;
+    const offset = parseInt(qs(req.query.offset) || '10') || 10;
+    const result = await getInternalTransactions(String(req.params.chain), String(req.params.address), page, offset);
+    res.json({ code: 0, data: result });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/etherscan/block/:chain — 最新区块号
+router.get('/etherscan/block/:chain', async (req: Request, res: Response) => {
+  try {
+    const result = await getLatestBlockNumber(String(req.params.chain));
+    res.json({ code: 0, data: result });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});

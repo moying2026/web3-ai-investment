@@ -6,6 +6,13 @@
 
 cd "$(dirname "$0")"
 
+# 加载 .env 环境变量
+if [ -f .env ]; then
+  set -a
+  source .env
+  set +a
+fi
+
 # 解析参数
 PROXY=""
 while [[ $# -gt 0 ]]; do
