@@ -14,6 +14,19 @@ if (PROXY_URL) {
 const API_KEY = process.env.ETHERSCAN_V2_KEY || '';
 const BASE_URL = process.env.ETHERSCAN_V2_BASE_URL || 'https://api.etherscan.io/v2/api';
 
+// 免费 Key 支持的模块（BSC 等非 ETH 链仅支持 contract 模块）
+const FREE_KEY_MODULES = new Set(['contract']);
+
+// 需要付费的链（非 ETH 主网）
+const PAID_CHAINS = new Set(['56', '8453', '137', '42161', '10', '43114']);
+
+function isModuleAvailable(chainId: string, module: string): boolean {
+  // ETH 主网：所有模块都可用
+  if (chainId === '1') return true;
+  // 其他链：只有 contract 模块可用
+  return FREE_KEY_MODULES.has(module);
+}
+
 // 链 ID 映射
 const CHAIN_ID_MAP: Record<string, string> = {
   'eth': '1',
@@ -104,6 +117,9 @@ export async function getContractVerificationStatus(chain: string, address: stri
 // 交易详情
 export async function getTransactionDetail(chain: string, txHash: string): Promise<any> {
   const chainId = CHAIN_ID_MAP[chain] || chain;
+  if (!isModuleAvailable(chainId, 'proxy')) {
+    return { chain: chainId, error: 'Free API key does not support proxy module on this chain. Upgrade plan or use chain-specific API key.', upgrade_required: true };
+  }
   const resp = await etherscanGet({
     chainid: chainId,
     module: 'proxy',
@@ -133,6 +149,9 @@ export async function getTransactionDetail(chain: string, txHash: string): Promi
 // 代币持仓（BEP20/ERC20 余额）
 export async function getTokenBalance(chain: string, address: string, contractAddress: string): Promise<any> {
   const chainId = CHAIN_ID_MAP[chain] || chain;
+  if (!isModuleAvailable(chainId, 'account')) {
+    return { chain: chainId, error: 'Free API key does not support account module on this chain. Upgrade plan or use chain-specific API key.', upgrade_required: true };
+  }
   const resp = await etherscanGet({
     chainid: chainId,
     module: 'account',
@@ -153,6 +172,9 @@ export async function getTokenBalance(chain: string, address: string, contractAd
 // 原生代币余额（BNB/ETH）
 export async function getNativeBalance(chain: string, address: string): Promise<any> {
   const chainId = CHAIN_ID_MAP[chain] || chain;
+  if (!isModuleAvailable(chainId, 'account')) {
+    return { chain: chainId, error: 'Free API key does not support account module on this chain. Upgrade plan or use chain-specific API key.', upgrade_required: true };
+  }
   const resp = await etherscanGet({
     chainid: chainId,
     module: 'account',
@@ -173,6 +195,9 @@ export async function getNativeBalance(chain: string, address: string): Promise<
 // Gas 价格
 export async function getGasPrice(chain: string): Promise<any> {
   const chainId = CHAIN_ID_MAP[chain] || chain;
+  if (!isModuleAvailable(chainId, 'gastracker')) {
+    return { chain: chainId, error: 'Free API key does not support gastracker module on this chain. Upgrade plan or use chain-specific API key.', upgrade_required: true };
+  }
   const resp = await etherscanGet({
     chainid: chainId,
     module: 'gastracker',
@@ -194,6 +219,9 @@ export async function getGasPrice(chain: string): Promise<any> {
 // 账户交易列表
 export async function getAccountTransactions(chain: string, address: string, page: number = 1, offset: number = 10): Promise<any> {
   const chainId = CHAIN_ID_MAP[chain] || chain;
+  if (!isModuleAvailable(chainId, 'account')) {
+    return { chain: chainId, error: 'Free API key does not support account module on this chain. Upgrade plan or use chain-specific API key.', upgrade_required: true };
+  }
   const resp = await etherscanGet({
     chainid: chainId,
     module: 'account',
@@ -229,6 +257,9 @@ export async function getAccountTransactions(chain: string, address: string, pag
 // 代币转账记录
 export async function getTokenTransfers(chain: string, address: string, contractAddress?: string, page: number = 1, offset: number = 10): Promise<any> {
   const chainId = CHAIN_ID_MAP[chain] || chain;
+  if (!isModuleAvailable(chainId, 'account')) {
+    return { chain: chainId, error: 'Free API key does not support account module on this chain. Upgrade plan or use chain-specific API key.', upgrade_required: true };
+  }
   const params: Record<string, string> = {
     chainid: chainId,
     module: 'account',
@@ -262,6 +293,9 @@ export async function getTokenTransfers(chain: string, address: string, contract
 // 合约内部交易
 export async function getInternalTransactions(chain: string, address: string, page: number = 1, offset: number = 10): Promise<any> {
   const chainId = CHAIN_ID_MAP[chain] || chain;
+  if (!isModuleAvailable(chainId, 'account')) {
+    return { chain: chainId, error: 'Free API key does not support account module on this chain. Upgrade plan or use chain-specific API key.', upgrade_required: true };
+  }
   const resp = await etherscanGet({
     chainid: chainId,
     module: 'account',
@@ -294,6 +328,9 @@ export async function getInternalTransactions(chain: string, address: string, pa
 // 代理请求 - ETH 区块号
 export async function getLatestBlockNumber(chain: string): Promise<any> {
   const chainId = CHAIN_ID_MAP[chain] || chain;
+  if (!isModuleAvailable(chainId, 'proxy')) {
+    return { chain: chainId, error: 'Free API key does not support proxy module on this chain. Upgrade plan or use chain-specific API key.', upgrade_required: true };
+  }
   const resp = await etherscanGet({
     chainid: chainId,
     module: 'proxy',
@@ -314,5 +351,9 @@ export function getApiKeyStatus(): any {
     base_url: BASE_URL,
     supported_chains: Object.keys(CHAIN_ID_MAP).filter(k => !k.match(/^\d+$/)),
     proxy: PROXY_URL || 'none',
+    free_tier_limitations: {
+      eth_mainnet: 'All modules (account, contract, proxy, gastracker)',
+      other_chains: 'Contract module only (getabi, getsourcecode). Account/proxy/gastracker require paid plan.',
+    },
   };
 }
