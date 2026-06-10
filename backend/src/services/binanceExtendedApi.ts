@@ -3,12 +3,8 @@
 
 import { db } from '../db/database';
 
-const { fetch: undiciFetch, ProxyAgent } = require('undici');
-const PROXY_URL = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || '';
-let dispatcher: any = undefined;
-if (PROXY_URL) {
-  dispatcher = new ProxyAgent(PROXY_URL);
-}
+const { fetch: undiciFetch } = require('undici');
+import { getDispatcher } from './proxyService';
 
 const BASE_URL = 'https://web3.binance.com';
 
@@ -50,7 +46,7 @@ export async function fetchTokenAudit(chainId: string, contractAddress: string):
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ binanceChainId: chainId, contractAddress, requestId: `audit-${Date.now()}` }),
-      dispatcher,
+      dispatcher: getDispatcher(),
     }).then((r: any) => r.json());
 
     if (resp.code !== '000000' || !resp.data) return null;
@@ -90,7 +86,7 @@ export async function fetchTokenDynamicInfo(chainId: string, contractAddress: st
     const resp = await undiciFetch(`${BASE_URL}/bapi/defi/v4/public/wallet-direct/buw/wallet/market/token/dynamic/info/ai?chainId=${chainId}&contractAddress=${contractAddress}`, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
-      dispatcher,
+      dispatcher: getDispatcher(),
     }).then((r: any) => r.json());
 
     if (resp.code !== '000000' || !resp.data) return null;
@@ -133,7 +129,7 @@ export async function fetchSmartMoneySignals(chainId: string = '56', pageSize: n
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chainId, page: 1, pageSize }),
-      dispatcher,
+      dispatcher: getDispatcher(),
     }).then((r: any) => r.json());
 
     if (resp.code !== '000000' || !Array.isArray(resp.data)) return [];
@@ -169,7 +165,7 @@ export async function fetchSocialHypeRank(chainId: string = '56'): Promise<Socia
     const resp = await undiciFetch(`${BASE_URL}/bapi/defi/v1/public/wallet-direct/buw/wallet/market/token/pulse/social/hype/rank/leaderboard/ai?chainId=${chainId}&sentiment=all&timeRange=24h`, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
-      dispatcher,
+      dispatcher: getDispatcher(),
     }).then((r: any) => r.json());
 
     if (resp.code !== '000000' || !Array.isArray(resp.data)) return [];
@@ -201,7 +197,7 @@ export async function fetchCreatorPnl(address: string, chainId: string = '56'): 
     const resp = await undiciFetch(`${BASE_URL}/bapi/defi/v3/public/wallet-direct/buw/wallet/address/pnl/active-position-list/ai?address=${address}&chainId=${chainId}`, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
-      dispatcher,
+      dispatcher: getDispatcher(),
     }).then((r: any) => r.json());
 
     if (resp.code !== '000000' || !resp.data) return null;

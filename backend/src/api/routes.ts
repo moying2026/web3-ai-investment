@@ -16,6 +16,7 @@ import {
   getSocialTopics, getStats
 } from '../services/tokenService';
 import { fetchKlines } from '../services/binanceApi';
+import { getProxyStatus, setProxy, testProxy } from '../services/proxyService';
 import { addSSEClient, getNewTokenBuffer, getLastPollTime, getSSEClientCount } from '../services/pollingService';
 import { ensureSimTables, placeOrder, closePosition, getPendingOrders, getTradesBySide, getPortfolioInfo, updateBudget } from '../services/simTradeService';
 
@@ -1232,6 +1233,49 @@ router.get('/etherscan/internal-txs/:chain/:address', async (req: Request, res: 
 router.get('/etherscan/block/:chain', async (req: Request, res: Response) => {
   try {
     const result = await getLatestBlockNumber(String(req.params.chain));
+    res.json({ code: 0, data: result });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// ============ 代理配置 API ============
+
+// GET /api/system/proxy — 获取代理状态
+router.get('/system/proxy', (_req: Request, res: Response) => {
+  try {
+    const status = getProxyStatus();
+    res.json({ code: 0, data: status });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// POST /api/system/proxy — 设置代理
+router.post('/system/proxy', async (req: Request, res: Response) => {
+  try {
+    const { address, enabled } = req.body;
+    if (typeof address !== 'string' || typeof enabled !== 'boolean') {
+      res.status(400).json({ code: -1, message: '参数格式错误: {address: string, enabled: boolean}' });
+      return;
+    }
+    const result = setProxy(address, enabled);
+    if (!result.success) {
+      res.status(500).json({ code: -1, message: result.message });
+      return;
+    }
+    // 设置后立即测试连通性
+    const test = await testProxy();
+    res.json({ code: 0, data: { ...result, test } });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// POST /api/system/proxy/test — 测试代理连通性
+router.post('/system/proxy/test', async (_req: Request, res: Response) => {
+  try {
+    const result = await testProxy();
     res.json({ code: 0, data: result });
   } catch (err: any) {
     res.status(500).json({ code: -1, message: err.message });

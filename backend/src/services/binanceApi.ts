@@ -1,18 +1,10 @@
 import { BinanceApiResponse, TokenListData, SocialTopic, PriceInfo } from '../types/token';
 
 const BASE_URL = process.env.BINANCE_BASE_URL || 'https://www.binance.com';
-const PROXY_URL = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || '';
 
-// 使用 undici 的 fetch + ProxyAgent 支持代理
-const { fetch: undiciFetch, ProxyAgent } = require('undici');
-let dispatcher: any = undefined;
-
-if (PROXY_URL) {
-  dispatcher = new ProxyAgent(PROXY_URL);
-  console.log(`[API] 使用代理: ${PROXY_URL}`);
-} else {
-  console.log('[API] 直连模式（无代理）');
-}
+// 使用 undici 的 fetch + 代理支持（动态代理，由 proxyService 管理）
+const { fetch: undiciFetch } = require('undici');
+import { getDispatcher } from './proxyService';
 
 // ===== 请求队列 + Mutex（修复竞态条件） =====
 const MIN_REQUEST_INTERVAL_MS = 1500; // 从 500ms 提升到 1500ms
@@ -88,8 +80,9 @@ async function proxyFetch(url: string, options: any = {}): Promise<any> {
     fetchOptions.body = options.body;
   }
 
-  if (dispatcher) {
-    fetchOptions.dispatcher = dispatcher;
+  const d = getDispatcher();
+  if (d) {
+    fetchOptions.dispatcher = d;
   }
 
   return undiciFetch(url, fetchOptions);
@@ -352,7 +345,8 @@ export async function fetchKlines(
     headers: { 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0' },
     signal: AbortSignal.timeout(15000),
   };
-  if (dispatcher) fetchOptions.dispatcher = dispatcher;
+  const d = getDispatcher();
+  if (d) fetchOptions.dispatcher = d;
 
   const resp = await undiciFetch(url, fetchOptions);
   const json = await resp.json();
