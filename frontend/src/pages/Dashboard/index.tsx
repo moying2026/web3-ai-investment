@@ -1288,30 +1288,30 @@ const Dashboard: React.FC = () => {
             items={[
               {
                 key: 'overview',
-                label: <span style={{ background: '#f0f5ff', border: '1px solid #d6e4ff', borderRadius: 4, padding: '2px 8px', fontSize: 12 }}>系统概况</span>,
+                label: <span style={{ background: '#f0f5ff', border: '1px solid #d6e4ff', borderRadius: 4, padding: '0 6px', fontSize: 11 }}>系统概况</span>,
                 children: (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                     {/* 上方三个统计卡片水平排列 */}
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <Card size="small" style={{ flex: 1, minWidth: 0 }} bodyStyle={{ padding: '8px 10px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <WalletOutlined style={{ fontSize: 14, color: '#8c8c8c' }} />
-                          <span style={{ color: '#8c8c8c', fontSize: 12 }}>代币</span>
-                          <span style={{ fontSize: 14, fontWeight: 'bold' }}>{stats?.totalTokens ?? '-'}</span>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <Card size="small" style={{ flex: 1, minWidth: 0 }} bodyStyle={{ padding: '4px 6px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <WalletOutlined style={{ fontSize: 12, color: '#8c8c8c' }} />
+                          <span style={{ color: '#8c8c8c', fontSize: 11 }}>代币</span>
+                          <span style={{ fontSize: 12, fontWeight: 'bold' }}>{stats?.totalTokens ?? '-'}</span>
                         </div>
                       </Card>
-                      <Card size="small" style={{ flex: 1, minWidth: 0 }} bodyStyle={{ padding: '8px 10px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <FundOutlined style={{ fontSize: 14, color: '#1890ff' }} />
-                          <span style={{ color: '#8c8c8c', fontSize: 12 }}>新增</span>
-                          <span style={{ fontSize: 14, fontWeight: 'bold', color: '#1890ff' }}>{stats?.todayNewTokens ?? '-'}</span>
+                      <Card size="small" style={{ flex: 1, minWidth: 0 }} bodyStyle={{ padding: '4px 6px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <FundOutlined style={{ fontSize: 12, color: '#1890ff' }} />
+                          <span style={{ color: '#8c8c8c', fontSize: 11 }}>新增</span>
+                          <span style={{ fontSize: 12, fontWeight: 'bold', color: '#1890ff' }}>{stats?.todayNewTokens ?? '-'}</span>
                         </div>
                       </Card>
-                      <Card size="small" style={{ flex: 1, minWidth: 0 }} bodyStyle={{ padding: '8px 10px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <ThunderboltOutlined style={{ fontSize: 14, color: '#8c8c8c' }} />
-                          <span style={{ color: '#8c8c8c', fontSize: 12 }}>话题</span>
-                          <span style={{ fontSize: 14, fontWeight: 'bold' }}>{stats?.totalSocialTopics ?? '-'}</span>
+                      <Card size="small" style={{ flex: 1, minWidth: 0 }} bodyStyle={{ padding: '4px 6px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <ThunderboltOutlined style={{ fontSize: 12, color: '#8c8c8c' }} />
+                          <span style={{ color: '#8c8c8c', fontSize: 11 }}>话题</span>
+                          <span style={{ fontSize: 12, fontWeight: 'bold' }}>{stats?.totalSocialTopics ?? '-'}</span>
                         </div>
                       </Card>
                     </div>
