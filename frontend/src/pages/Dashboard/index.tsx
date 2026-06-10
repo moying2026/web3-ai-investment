@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Row, Col, Card, Statistic, Tag, Table, Badge, Space, message, Spin, Select, Input, InputNumber, Button, Form, Segmented, Progress, Tabs, Divider, Alert, Descriptions } from 'antd';
+import { Row, Col, Card, Statistic, Tag, Table, Badge, Space, message, Spin, Select, Input, InputNumber, Button, Form, Segmented, Progress, Tabs, Divider, Alert, Descriptions, Tooltip } from 'antd';
 import {
   WalletOutlined,
   FundOutlined,
@@ -1132,13 +1132,23 @@ const Dashboard: React.FC = () => {
       title: '标签',
       key: 'tags',
       width: 200,
-      render: (_: any, record: Token) => (
-        <Space size={2} style={{ whiteSpace: 'nowrap' }}>
-          {parseTags(record).slice(0, 3).map(tag => (
-            <Tag key={tag} style={{ fontSize: 11 }}>{tag}</Tag>
-          ))}
-        </Space>
-      ),
+      render: (_: any, record: Token) => {
+        const allTags = parseTags(record);
+        const visibleTags = allTags.slice(0, 3);
+        const remaining = allTags.length - 3;
+        return (
+          <Tooltip title={allTags.length > 0 ? allTags.join('、') : '暂无标签'}>
+            <div style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <Space size={2}>
+                {visibleTags.map(tag => (
+                  <Tag key={tag} style={{ fontSize: 11 }}>{tag}</Tag>
+                ))}
+                {remaining > 0 && <span style={{ color: '#8c8c8c', fontSize: 11 }}>+{remaining}</span>}
+              </Space>
+            </div>
+          </Tooltip>
+        );
+      },
     },
     {
       title: '发行方',
