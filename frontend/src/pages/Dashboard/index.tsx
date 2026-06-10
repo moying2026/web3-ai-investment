@@ -1230,30 +1230,42 @@ const Dashboard: React.FC = () => {
       {/* 统计 + 收益曲线：左右布局 */}
       <Row gutter={16} style={{ marginBottom: 4 }}>
         <Col span={6}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {/* 上方三个统计卡片水平排列，总宽度与下方AI辅助一致 */}
-            <div style={{ display: 'flex', gap: 8 }}>
-              <Card size="small" style={{ flex: 1, minWidth: 0 }} bodyStyle={{ padding: '8px 10px' }}>
-                <Statistic title="代币" value={stats?.totalTokens ?? '-'} prefix={<WalletOutlined />} loading={!stats} valueStyle={{ fontSize: 14 }} />
-              </Card>
-              <Card size="small" style={{ flex: 1, minWidth: 0 }} bodyStyle={{ padding: '8px 10px' }}>
-                <Statistic title="新增" value={stats?.todayNewTokens ?? '-'} prefix={<FundOutlined />} valueStyle={{ color: '#1890ff', fontSize: 14 }} loading={!stats} />
-              </Card>
-              <Card size="small" style={{ flex: 1, minWidth: 0 }} bodyStyle={{ padding: '8px 10px' }}>
-                <Statistic title="话题" value={stats?.totalSocialTopics ?? '-'} prefix={<ThunderboltOutlined />} valueStyle={{ fontSize: 14 }} loading={!stats} />
-              </Card>
-            </div>
-            {/* 下方AI辅助单独一行 */}
-            <Card size="small" bodyStyle={{ padding: '8px 12px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <div style={{ color: '#8c8c8c', marginBottom: 4, fontSize: 12 }}>交易模式</div>
-                  <div style={{ fontSize: 16, fontWeight: 'bold' }}>{autoMode ? '🤖 AI全自动' : '👤 AI辅助'}</div>
-                </div>
-                <Switch checked={autoMode} onChange={setAutoMode} checkedChildren="自动" unCheckedChildren="手动" size="small" />
-              </div>
-            </Card>
-          </div>
+          <Tabs
+            size="small"
+            defaultActiveKey="overview"
+            items={[
+              {
+                key: 'overview',
+                label: '概览',
+                children: (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {/* 上方三个统计卡片水平排列 */}
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <Card size="small" style={{ flex: 1, minWidth: 0 }} bodyStyle={{ padding: '8px 10px' }}>
+                        <Statistic title="代币" value={stats?.totalTokens ?? '-'} prefix={<WalletOutlined />} loading={!stats} valueStyle={{ fontSize: 14 }} />
+                      </Card>
+                      <Card size="small" style={{ flex: 1, minWidth: 0 }} bodyStyle={{ padding: '8px 10px' }}>
+                        <Statistic title="新增" value={stats?.todayNewTokens ?? '-'} prefix={<FundOutlined />} valueStyle={{ color: '#1890ff', fontSize: 14 }} loading={!stats} />
+                      </Card>
+                      <Card size="small" style={{ flex: 1, minWidth: 0 }} bodyStyle={{ padding: '8px 10px' }}>
+                        <Statistic title="话题" value={stats?.totalSocialTopics ?? '-'} prefix={<ThunderboltOutlined />} valueStyle={{ fontSize: 14 }} loading={!stats} />
+                      </Card>
+                    </div>
+                    {/* 下方AI辅助单独一行 */}
+                    <Card size="small" bodyStyle={{ padding: '8px 12px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <div style={{ color: '#8c8c8c', marginBottom: 4, fontSize: 12 }}>交易模式</div>
+                          <div style={{ fontSize: 16, fontWeight: 'bold' }}>{autoMode ? '🤖 AI全自动' : '👤 AI辅助'}</div>
+                        </div>
+                        <Switch checked={autoMode} onChange={setAutoMode} checkedChildren="自动" unCheckedChildren="手动" size="small" />
+                      </div>
+                    </Card>
+                  </div>
+                ),
+              },
+            ]}
+          />
         </Col>
         <Col span={18}>
           <Card title="📈 组合收益曲线" size="small" style={{ height: '100%' }}>
