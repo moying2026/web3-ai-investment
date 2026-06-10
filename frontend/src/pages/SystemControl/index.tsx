@@ -174,7 +174,7 @@ const SystemControl: React.FC = () => {
                     onChange={(checked) => handleToggle(mod.id, checked)}
                     checkedChildren="运行"
                     unCheckedChildren="暂停"
-                    style={{ height: 33 }}
+                    style={{ height: 25, lineHeight: "25px" }}
                   />
                 </div>
                 {mod.lastError && (
@@ -202,7 +202,7 @@ const SystemControl: React.FC = () => {
               onChange={setAutoMode}
               checkedChildren="自动"
               unCheckedChildren="手动"
-              style={{ height: 33 }}
+              style={{ height: 25, lineHeight: "25px" }}
             />
           </div>
         </Card>
