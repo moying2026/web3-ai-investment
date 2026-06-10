@@ -27,6 +27,12 @@ export const tokenApi = {
     api.get<any, Token>(`/tokens/${chain}/${address}`),
   getSnapshots: (chain: string, address: string) =>
     api.get<any, Snapshot[]>(`/tokens/${chain}/${address}/snapshots`),
+  /** K线数据（OHLCV） */
+  getKlines: (chain: string, address: string, interval?: string, limit?: number) =>
+    api.get<any, Array<{ time: number; open: number; high: number; low: number; close: number; volume: number }>>(
+      `/tokens/${chain}/${address}/klines`,
+      { params: { interval: interval ?? 'D', limit: limit ?? 100 } }
+    ),
 };
 
 // 统计数据
