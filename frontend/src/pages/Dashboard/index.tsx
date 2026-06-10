@@ -1242,13 +1242,25 @@ const Dashboard: React.FC = () => {
                     {/* 上方三个统计卡片水平排列 */}
                     <div style={{ display: 'flex', gap: 8 }}>
                       <Card size="small" style={{ flex: 1, minWidth: 0 }} bodyStyle={{ padding: '8px 10px' }}>
-                        <Statistic title="代币" value={stats?.totalTokens ?? '-'} prefix={<WalletOutlined />} loading={!stats} valueStyle={{ fontSize: 14 }} />
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <WalletOutlined style={{ fontSize: 14, color: '#8c8c8c' }} />
+                          <span style={{ color: '#8c8c8c', fontSize: 12 }}>代币</span>
+                          <span style={{ fontSize: 14, fontWeight: 'bold' }}>{stats?.totalTokens ?? '-'}</span>
+                        </div>
                       </Card>
                       <Card size="small" style={{ flex: 1, minWidth: 0 }} bodyStyle={{ padding: '8px 10px' }}>
-                        <Statistic title="新增" value={stats?.todayNewTokens ?? '-'} prefix={<FundOutlined />} valueStyle={{ color: '#1890ff', fontSize: 14 }} loading={!stats} />
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <FundOutlined style={{ fontSize: 14, color: '#1890ff' }} />
+                          <span style={{ color: '#8c8c8c', fontSize: 12 }}>新增</span>
+                          <span style={{ fontSize: 14, fontWeight: 'bold', color: '#1890ff' }}>{stats?.todayNewTokens ?? '-'}</span>
+                        </div>
                       </Card>
                       <Card size="small" style={{ flex: 1, minWidth: 0 }} bodyStyle={{ padding: '8px 10px' }}>
-                        <Statistic title="话题" value={stats?.totalSocialTopics ?? '-'} prefix={<ThunderboltOutlined />} valueStyle={{ fontSize: 14 }} loading={!stats} />
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <ThunderboltOutlined style={{ fontSize: 14, color: '#8c8c8c' }} />
+                          <span style={{ color: '#8c8c8c', fontSize: 12 }}>话题</span>
+                          <span style={{ fontSize: 14, fontWeight: 'bold' }}>{stats?.totalSocialTopics ?? '-'}</span>
+                        </div>
                       </Card>
                     </div>
                   </div>
