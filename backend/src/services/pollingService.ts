@@ -94,6 +94,21 @@ export async function pollTokenData(): Promise<void> {
         } else {
           updateTokenLatestPrice(token);
           updatedCount++;
+          // SSE 推送价格变化
+          broadcast('price_update', {
+            type: 'price_update',
+            chainId: token.chainId,
+            contractAddress: token.contractAddress,
+            symbol: token.symbol,
+            price: token.price,
+            percentChange1h: token.percentChange1h,
+            percentChange24h: token.percentChange24h,
+            volume24h: token.volume24h,
+            holders: token.holders,
+            liquidity: token.liquidity,
+            marketCap: token.marketCap,
+            updatedAt: new Date().toISOString(),
+          });
         }
       }
     }
@@ -160,6 +175,20 @@ export async function pollLatestTokens(): Promise<void> {
           } else {
             updateTokenLatestPrice(token);
             totalUpdated++;
+            broadcast('price_update', {
+              type: 'price_update',
+              chainId: token.chainId,
+              contractAddress: token.contractAddress,
+              symbol: token.symbol,
+              price: token.price,
+              percentChange1h: token.percentChange1h,
+              percentChange24h: token.percentChange24h,
+              volume24h: token.volume24h,
+              holders: token.holders,
+              liquidity: token.liquidity,
+              marketCap: token.marketCap,
+              updatedAt: new Date().toISOString(),
+            });
           }
         }
 
