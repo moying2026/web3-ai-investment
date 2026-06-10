@@ -779,6 +779,68 @@ const Dashboard: React.FC = () => {
     volume_24h: 120, liquidity: 100, holders: 80, tags: 200, creator_address: 130,
   });
 
+  // K线图状态（顶部独立区域）
+  const [klinePeriod, setKlinePeriod] = useState<string>('1h');
+  const [klineData, setKlineData] = useState<Array<{ time: number; open: number; high: number; low: number; close: number; volume: number }>>([]);
+  const [klineLoading, setKlineLoading] = useState(false);
+  const klinePeriods = [
+    { key: '1m', label: '1分' }, { key: '5m', label: '5分' }, { key: '15m', label: '15分' },
+    { key: '1h', label: '1时' }, { key: '4h', label: '4时' },
+    { key: '24h', label: '日线' }, { key: '7d', label: '周线' },
+  ];
+  const chainNameMap: Record<string, string> = { '56': 'bsc', 'CT_501': 'solana', '1': 'eth', '8453': 'base' };
+  const mapInterval = (p: string): string => {
+    const m: Record<string, string> = { '1m': '1', '5m': '5', '15m': '15', '1h': '60', '4h': '240', '24h': 'D', '7d': 'W' };
+    return m[p] ?? 'D';
+  };
+
+  // K线数据获取（顶部区域）
+  useEffect(() => {
+    if (!selectedToken) { setKlineData([]); return; }
+    const chainName = chainNameMap[selectedToken.chain] ?? selectedToken.chain;
+    setKlineLoading(true);
+    tokenApi.getKlines(chainName, selectedToken.address, mapInterval(klinePeriod), 100)
+      .then((res: any) => {
+        const raw = Array.isArray(res) ? res : (res?.data ?? []);
+        setKlineData(raw.map((d: any) => ({
+          time: d.timestamp ?? d.time,
+          open: d.open, high: d.high, low: d.low, close: d.close,
+          volume: d.volume ?? 0,
+        })));
+      })
+      .catch(() => setKlineData([]))
+      .finally(() => setKlineLoading(false));
+  }, [selectedToken, klinePeriod]);
+
+  const klineTimeLabels = klineData.map(d => {
+    const date = new Date(d.time);
+    if (['1m', '5m', '15m'].includes(klinePeriod)) return date.toLocaleTimeString();
+    if (['1h', '4h'].includes(klinePeriod)) return `${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:00`;
+    return `${date.getMonth() + 1}/${date.getDate()}`;
+  });
+
+  const klineOption = {
+    tooltip: { trigger: 'axis' as const, axisPointer: { type: 'cross' as const } },
+    xAxis: { type: 'category' as const, data: klineTimeLabels, axisLabel: { fontSize: 10 } },
+    yAxis: {
+      type: 'value' as const, scale: true,
+      axisLabel: { formatter: (v: number) => {
+        if (v === 0) return '0';
+        if (Math.abs(v) < 1) { const s = Math.abs(v).toFixed(20).replace(/0+$/, ''); return v.toFixed(Math.min(18, Math.max(8, (s.split('.')[1] || '').length))); }
+        if (v >= 1e6) return `${(v / 1e6).toFixed(1)}M`;
+        if (v >= 1e3) return `${(v / 1e3).toFixed(0)}K`;
+        return v.toFixed(2);
+      } },
+    },
+    dataZoom: [{ type: 'inside' as const, start: 0, end: 100 }, { type: 'slider' as const, start: 0, end: 100, height: 20, bottom: 5 }],
+    series: [{
+      name: 'K线', type: 'candlestick' as const,
+      data: klineData.map(d => [d.open, d.close, d.low, d.high]),
+      itemStyle: { color: '#ef5350', color0: '#26a69a', borderColor: '#ef5350', borderColor0: '#26a69a' },
+    }],
+    grid: { left: 60, right: 60, top: 20, bottom: 40 },
+  };
+
   // 加载统计数据
   const loadStats = useCallback(async () => {
     try {
@@ -1315,6 +1377,11 @@ const Dashboard: React.FC = () => {
                         </div>
                       </Card>
                     </div>
+                    {/* 组合收益曲线 */}
+                    <Card size="small" bodyStyle={{ padding: '4px 6px' }}>
+                      <div style={{ fontSize: 11, color: '#8c8c8c', marginBottom: 2 }}>📈 组合收益曲线</div>
+                      <ReactECharts option={curveOption} style={{ height: 120 }} />
+                    </Card>
                   </div>
                 ),
               },
@@ -1322,8 +1389,27 @@ const Dashboard: React.FC = () => {
           />
         </Col>
         <Col span={18}>
-          <Card title="📈 组合收益曲线" size="small" style={{ height: '100%' }}>
-            <ReactECharts option={curveOption} style={{ height: 160 }} />
+          <Card title="📊 K线图" size="small" style={{ height: '100%' }} bodyStyle={{ padding: '4px 8px' }}
+            extra={
+              <Space size={2}>
+                {klinePeriods.map(p => (
+                  <Button key={p.key} size="small" type={klinePeriod === p.key ? 'primary' : 'default'}
+                    onClick={() => setKlinePeriod(p.key)} style={{ fontSize: 11, padding: '0 4px' }}>{p.label}</Button>
+                ))}
+              </Space>
+            }
+          >
+            {klineLoading ? (
+              <div style={{ height: 160, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Spin size="small" />
+              </div>
+            ) : klineData.length === 0 ? (
+              <div style={{ height: 160, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8c8c8c' }}>
+                {selectedToken ? '暂无K线数据' : '请点击左侧代币查看K线'}
+              </div>
+            ) : (
+              <ReactECharts option={klineOption} style={{ height: 160 }} />
+            )}
           </Card>
         </Col>
       </Row>
