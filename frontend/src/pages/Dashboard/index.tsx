@@ -353,11 +353,17 @@ const TokenQuickView: React.FC<{ chain: string; address: string }> = ({ chain, a
     return map[period] ?? 'D';
   };
 
+  // chain_id → 后端接受的链名
+  const chainNameMap: Record<string, string> = {
+    '56': 'bsc', '1': 'eth', '8453': 'base', 'CT_501': 'solana',
+  };
+  const chainName = chainNameMap[chain] ?? chain;
+
   // K线数据获取
   useEffect(() => {
     if (!chain || !address) { setKlineData([]); return; }
     setKlineLoading(true);
-    tokenApi.getKlines(chain, address, mapInterval(klinePeriod), 100)
+    tokenApi.getKlines(chainName, address, mapInterval(klinePeriod), 100)
       .then((res: any) => {
         const raw = Array.isArray(res) ? res : (res?.data ?? []);
         setKlineData(raw.map((d: any) => ({
@@ -758,6 +764,12 @@ const KlinePanel: React.FC<{ chain: string; address: string }> = ({ chain, addre
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<string>('24h');
 
+  // chain_id → 后端接受的链名
+  const chainNameMap: Record<string, string> = {
+    '56': 'bsc', '1': 'eth', '8453': 'base', 'CT_501': 'solana',
+  };
+  const chainName = chainNameMap[chain] ?? chain;
+
   const mapInterval = (p: string): string => {
     const m: Record<string, string> = { '1m': '1', '5m': '5', '15m': '15', '1h': '60', '4h': '240', '24h': 'D', '7d': 'W' };
     return m[p] ?? 'D';
@@ -766,7 +778,7 @@ const KlinePanel: React.FC<{ chain: string; address: string }> = ({ chain, addre
   useEffect(() => {
     if (!chain || !address) { setKlineData([]); setLoading(false); return; }
     setLoading(true);
-    tokenApi.getKlines(chain, address, mapInterval(period), 100)
+    tokenApi.getKlines(chainName, address, mapInterval(period), 100)
       .then((res: any) => {
         const raw = Array.isArray(res) ? res : (res?.data ?? []);
         setKlineData(raw.map((d: any) => ({
