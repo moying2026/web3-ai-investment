@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Card, Button, Tag, Space, Spin, message, Divider, Progress, Row, Col, Timeline, Badge } from 'antd';
+import { Card, Button, Tag, Space, Spin, message, Divider, Progress, Row, Col, Badge } from 'antd';
 import {
   RobotOutlined,
-  ThunderboltOutlined,
+
   SafetyOutlined,
   FundOutlined,
   LinkOutlined,
-  CheckCircleOutlined,
+
   PlayCircleOutlined,
   ReloadOutlined,
   WarningOutlined,
