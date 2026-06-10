@@ -741,6 +741,33 @@ const TokenQuickView: React.FC<{ chain: string; address: string }> = ({ chain, a
   );
 };
 
+// K线图组件（GeckoTerminal embed — 支持 DEX 代币合约地址）
+const KlinePanel: React.FC<{ chain: string; address: string }> = ({ chain, address }) => {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  // chain_id → GeckoTerminal network slug
+  const gtNetworkMap: Record<string, string> = {
+    '56': 'bsc', 'CT_501': 'solana', '1': 'eth', '8453': 'base',
+  };
+  const network = gtNetworkMap[chain] || 'bsc';
+  const buildUrl = () =>
+    `https://www.geckoterminal.com/${network}/tokens/${address}?embed=1&chart_type=candlestick&theme=dark`;
+
+  return (
+    <div style={{ height: 460, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 8px', borderBottom: '1px solid #f0f0f0', background: '#fafafa' }}>
+        <span style={{ fontSize: 11, color: '#8c8c8c' }}>GeckoTerminal · {network.toUpperCase()}</span>
+        <a href={buildUrl()} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11 }}>↗ 新窗口</a>
+      </div>
+      <iframe
+        ref={iframeRef}
+        src={buildUrl()}
+        style={{ flex: 1, border: 'none', width: '100%' }}
+        title="K线图"
+      />
+    </div>
+  );
+};
+
 const Dashboard: React.FC = () => {
   const [autoMode, setAutoMode] = useState(false);
   const [tokens, setTokens] = useState<Token[]>([]);
@@ -1368,6 +1395,20 @@ const Dashboard: React.FC = () => {
               items={[
                 {
                   key: 'Tab1',
+                  label: `代币详情${selectedToken ? ` (${selectedToken.symbol})` : ''}`,
+                  children: selectedToken
+                    ? <TokenQuickView chain={selectedToken.chain} address={selectedToken.address} />
+                    : <div style={{ padding: '40px 0', color: '#8c8c8c', textAlign: 'center' }}>请点击左侧代币查看详情</div>,
+                },
+                {
+                  key: 'Tab2',
+                  label: '📊 K线图',
+                  children: selectedToken
+                    ? <KlinePanel chain={selectedToken.chain} address={selectedToken.address} />
+                    : <div style={{ padding: '40px 0', color: '#8c8c8c', textAlign: 'center' }}>请点击左侧代币查看K线图</div>,
+                },
+                {
+                  key: 'Tab3',
                   label: '发行方',
                   children: <div style={{ overflowY: 'auto', height: 460 }}>
                     {selectedToken?.creatorAddress
@@ -1376,7 +1417,7 @@ const Dashboard: React.FC = () => {
                   </div>,
                 },
                 {
-                  key: 'Tab2',
+                  key: 'Tab4',
                   label: '综合评分',
                   children: <div style={{ overflowY: 'auto', height: 460 }}>
                     {selectedToken
@@ -1385,20 +1426,13 @@ const Dashboard: React.FC = () => {
                   </div>,
                 },
                 {
-                  key: 'Tab3',
+                  key: 'Tab5',
                   label: 'AI 讨论',
                   children: <div style={{ overflowY: 'auto', height: 460 }}>
                     {selectedToken
                       ? <AIDiscussionPanel chain={selectedToken.chain} address={selectedToken.address} />
                       : <div style={{ padding: '40px 0', color: '#8c8c8c', textAlign: 'center' }}>请点击左侧代币启动 AI 讨论</div>}
                   </div>,
-                },
-                {
-                  key: 'Tab4',
-                  label: `代币详情${selectedToken ? ` (${selectedToken.symbol})` : ''}`,
-                  children: selectedToken
-                    ? <TokenQuickView chain={selectedToken.chain} address={selectedToken.address} />
-                    : <div style={{ padding: '40px 0', color: '#8c8c8c', textAlign: 'center' }}>请点击左侧代币查看详情</div>,
                 },
               ]}
             />
