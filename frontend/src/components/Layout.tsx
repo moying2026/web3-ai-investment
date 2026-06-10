@@ -35,7 +35,7 @@ const AppLayout: React.FC = () => {
     { key: '/trading', icon: <SwapOutlined />, label: '交易' },
     { key: '/rules', icon: <ControlOutlined />, label: '规则引擎' },
     { key: '/issuer', icon: <UserOutlined />, label: '发行方画像' },
-    { key: '/signals', icon: <ThunderboltOutlined />, label: 'Smart Money' },
+    { key: '/signals', icon: <ThunderboltOutlined />, label: '聪明钱' },
   ];
 
   const handleMenuClick = ({ key }: { key: string }) => {
@@ -73,7 +73,7 @@ const AppLayout: React.FC = () => {
             selectedKeys={[getSelectedKey()]}
             items={menuItems}
             onClick={handleMenuClick}
-            style={{ flex: 1, minWidth: 0 }}
+            style={{ flex: 1 }}
           />
         </div>
         <Space size="large">
