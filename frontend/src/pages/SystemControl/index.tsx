@@ -103,7 +103,6 @@ const SystemControl: React.FC = () => {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Space>
               <ThunderboltOutlined style={{ fontSize: 20, color: '#1890ff' }} />
-              <span style={{ fontSize: 18, fontWeight: 'bold' }}>系统控制面板</span>
               <Tag color={allRunning ? 'green' : allStopped ? 'default' : 'blue'}>
                 {allRunning ? '全部运行中' : allStopped ? '全部已暂停' : '部分运行中'}
               </Tag>
