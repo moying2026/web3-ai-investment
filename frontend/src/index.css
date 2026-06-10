@@ -68,3 +68,25 @@ body {
 .ultra-compact-table .ant-table-small .ant-table-thead > tr {
   height: 28px;
 }
+
+/* 可拖拽调整列宽 */
+.resizable-handle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  cursor: col-resize;
+  background: #d9d9d9;
+  transition: background 0.2s;
+}
+.resizable-handle:hover,
+.resizable-handle.active {
+  background: #1890ff;
+}
+
+/* 分割线增强对比度 */
+.ant-divider-horizontal {
+  border-top-color: #d0d0d0 !important;
+  margin: 8px 0 !important;
+}

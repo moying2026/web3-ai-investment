@@ -774,6 +774,10 @@ const Dashboard: React.FC = () => {
   const [pnlCurveData, setPnlCurveData] = useState<{ date: string; value: number }[]>([]);
   const [selectedToken, setSelectedToken] = useState<{ chain: string; address: string; symbol: string; creatorAddress?: string } | null>(null);
   const [activeTab, setActiveTab] = useState<string>('Tab1');
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({
+    symbol: 200, chain: 60, price: 100, change_1h: 80,
+    volume_24h: 120, liquidity: 100, holders: 80, tags: 200, creator_address: 130,
+  });
 
   // 加载统计数据
   const loadStats = useCallback(async () => {
@@ -1026,12 +1030,42 @@ const Dashboard: React.FC = () => {
     grid: { left: 80, right: 20, top: 20, bottom: 30 },
   };
 
-  // 表格列
+  // 可拖拽调整列宽的表头单元格
+  const ResizableTitle = (props: any) => {
+    const { onResize, width, ...restProps } = props;
+    if (!width) return <th {...restProps} />;
+    return (
+      <th {...restProps} style={{ ...restProps.style, position: 'relative' }}>
+        {restProps.children}
+        <div
+          className="resizable-handle"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            const startX = e.clientX;
+            const startWidth = width;
+            const onMouseMove = (e: MouseEvent) => {
+              const newWidth = Math.max(50, startWidth + e.clientX - startX);
+              onResize?.(newWidth);
+            };
+            const onMouseUp = () => {
+              document.removeEventListener('mousemove', onMouseMove);
+              document.removeEventListener('mouseup', onMouseUp);
+            };
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+          }}
+        />
+      </th>
+    );
+  };
+
+  // 表格列（支持拖拽调整宽度）
   const tokenColumns = [
     {
       title: '代币',
       key: 'symbol',
-      width: 200,
+      width: columnWidths.symbol,
+      onResize: (w: number) => setColumnWidths(prev => ({ ...prev, symbol: w })),
       render: (_: any, record: Token) => (
         <Space>
           <TokenIcon
@@ -1049,7 +1083,8 @@ const Dashboard: React.FC = () => {
       title: '链',
       dataIndex: 'chain_id',
       key: 'chain_id',
-      width: 80,
+      width: columnWidths.chain,
+      onResize: (w: number) => setColumnWidths(prev => ({ ...prev, chain: w })),
       render: (v: string) => {
         const chainMap: Record<string, string> = { '56': 'BSC', 'CT_501': 'SOL', '1': 'ETH', '8453': 'Base' };
         return <Tag>{chainMap[v] || v}</Tag>;
@@ -1059,7 +1094,8 @@ const Dashboard: React.FC = () => {
       title: '价格',
       key: 'price',
       dataIndex: 'price_latest',
-      width: 120,
+      width: columnWidths.price,
+      onResize: (w: number) => setColumnWidths(prev => ({ ...prev, price: w })),
       sorter: true,
       sortOrder: sortField === 'price_latest' ? (sortOrder === 'asc' ? 'ascend' as const : 'descend' as const) : undefined,
       render: (_: any, record: Token) => formatPrice(record.price_latest),
@@ -1068,7 +1104,8 @@ const Dashboard: React.FC = () => {
       title: '1h涨跌',
       key: 'change_1h',
       dataIndex: 'percent_change_1h',
-      width: 100,
+      width: columnWidths.change_1h,
+      onResize: (w: number) => setColumnWidths(prev => ({ ...prev, change_1h: w })),
       sorter: true,
       defaultSortOrder: 'descend' as const,
       sortOrder: sortField === 'percent_change_1h' ? (sortOrder === 'asc' ? 'ascend' as const : 'descend' as const) : undefined,
@@ -1085,7 +1122,8 @@ const Dashboard: React.FC = () => {
       title: '24h成交量',
       key: 'volume_24h',
       dataIndex: 'volume_24h',
-      width: 120,
+      width: columnWidths.volume_24h,
+      onResize: (w: number) => setColumnWidths(prev => ({ ...prev, volume_24h: w })),
       sorter: true,
       sortOrder: sortField === 'volume_24h' ? (sortOrder === 'asc' ? 'ascend' as const : 'descend' as const) : undefined,
       render: (_: any, record: Token) => formatVolume(record.volume_24h),
@@ -1094,7 +1132,8 @@ const Dashboard: React.FC = () => {
       title: '流动性',
       key: 'liquidity',
       dataIndex: 'liquidity',
-      width: 100,
+      width: columnWidths.liquidity,
+      onResize: (w: number) => setColumnWidths(prev => ({ ...prev, liquidity: w })),
       sorter: true,
       sortOrder: sortField === 'liquidity' ? (sortOrder === 'asc' ? 'ascend' as const : 'descend' as const) : undefined,
       render: (_: any, record: Token) => formatVolume(record.liquidity),
@@ -1103,7 +1142,8 @@ const Dashboard: React.FC = () => {
       title: '持有人',
       dataIndex: 'holders',
       key: 'holders',
-      width: 80,
+      width: columnWidths.holders,
+      onResize: (w: number) => setColumnWidths(prev => ({ ...prev, holders: w })),
       sorter: true,
       sortOrder: sortField === 'holders' ? (sortOrder === 'asc' ? 'ascend' as const : 'descend' as const) : undefined,
     },
@@ -1131,7 +1171,8 @@ const Dashboard: React.FC = () => {
     {
       title: '标签',
       key: 'tags',
-      width: 200,
+      width: columnWidths.tags,
+      onResize: (w: number) => setColumnWidths(prev => ({ ...prev, tags: w })),
       render: (_: any, record: Token) => {
         const allTags = parseTags(record);
         const visibleTags = allTags.slice(0, 3);
@@ -1154,7 +1195,8 @@ const Dashboard: React.FC = () => {
       title: '发行方',
       key: 'creator_address',
       dataIndex: 'creator_address',
-      width: 130,
+      width: columnWidths.creator_address,
+      onResize: (w: number) => setColumnWidths(prev => ({ ...prev, creator_address: w })),
       ellipsis: true,
       render: (v: string) => {
         if (!v) return '-';
@@ -1406,6 +1448,11 @@ const Dashboard: React.FC = () => {
                 rowKey="id"
                 size="small"
                 className="ultra-compact-table"
+                components={{
+                  header: {
+                    cell: ResizableTitle,
+                  },
+                }}
                 onChange={handleTableChange}
                 pagination={{
                   current: pagination.page,
