@@ -273,35 +273,7 @@ const AgentScorePanel: React.FC<{ chain: string; address: string }> = ({ chain, 
   );
 };
 
-// 生成 mock K线数据
-function generateKlineData(period: string, basePrice: number) {
-  const cfg: Record<string, { count: number; intervalMs: number }> = {
-    '1m':  { count: 120, intervalMs: 60000 },
-    '5m':  { count: 100, intervalMs: 300000 },
-    '1h':  { count: 72,  intervalMs: 3600000 },
-    '4h':  { count: 60,  intervalMs: 14400000 },
-    '24h': { count: 30,  intervalMs: 86400000 },
-    '7d':  { count: 28,  intervalMs: 604800000 },
-    '30d': { count: 30,  intervalMs: 2592000000 },
-  };
-  const c = cfg[period] || cfg['1h'];
-  const now = Date.now();
-  const data: Array<{ time: number; open: number; high: number; low: number; close: number; volume: number }> = [];
-  let last = basePrice > 0 ? basePrice : 1;
-  for (let i = 0; i < c.count; i++) {
-    const time = now - (c.count - i) * c.intervalMs;
-    const vol = basePrice * 0.03;
-    const open = last;
-    const change = (Math.random() - 0.48) * vol;
-    const close = Math.max(open + change, basePrice * 0.5);
-    const high = Math.max(open, close) + Math.random() * vol * 0.5;
-    const low = Math.min(open, close) - Math.random() * vol * 0.3;
-    const volume = Math.random() * 500000 + 50000;
-    data.push({ time, open, high, low, close, volume });
-    last = close;
-  }
-  return data;
-}
+
 
 // 代币快速查看组件（嵌入Tab4，完整迁移自TokenDetail）
 const TokenQuickView: React.FC<{ chain: string; address: string }> = ({ chain, address }) => {
@@ -310,6 +282,8 @@ const TokenQuickView: React.FC<{ chain: string; address: string }> = ({ chain, a
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [klinePeriod, setKlinePeriod] = useState<string>('1h');
+  const [klineData, setKlineData] = useState<Array<{ time: number; open: number; high: number; low: number; close: number; volume: number }>>([]);
+  const [klineLoading, setKlineLoading] = useState(false);
   const [auditData, setAuditData] = useState<any>(null);
   const [dynamicData, setDynamicData] = useState<any>(null);
   const [similarData, setSimilarData] = useState<any>(null);
@@ -368,6 +342,33 @@ const TokenQuickView: React.FC<{ chain: string; address: string }> = ({ chain, a
     }
     return () => { if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; } };
   }, [chain, address, autoRefresh, refreshDynamic]);
+
+  // interval 映射：前端格式 → 后端格式
+  const mapInterval = (period: string): string => {
+    const map: Record<string, string> = {
+      '1m': '1', '5m': '5', '15m': '15',
+      '1h': '60', '4h': '240',
+      '24h': 'D', '7d': 'W', '30d': 'M',
+    };
+    return map[period] ?? 'D';
+  };
+
+  // K线数据获取
+  useEffect(() => {
+    if (!chain || !address) { setKlineData([]); return; }
+    setKlineLoading(true);
+    tokenApi.getKlines(chain, address, mapInterval(klinePeriod), 100)
+      .then((res: any) => {
+        const raw = Array.isArray(res) ? res : (res?.data ?? []);
+        setKlineData(raw.map((d: any) => ({
+          time: d.timestamp ?? d.time,
+          open: d.open, high: d.high, low: d.low, close: d.close,
+          volume: d.volume ?? 0,
+        })));
+      })
+      .catch(() => setKlineData([]))
+      .finally(() => setKlineLoading(false));
+  }, [chain, address, klinePeriod]);
 
   if (loading) return <Spin size="large" style={{ display: 'block', margin: '60px auto' }} />;
   if (!token) return <div style={{ textAlign: 'center', padding: 40, color: '#8c8c8c' }}>代币未找到</div>;
@@ -436,10 +437,9 @@ const TokenQuickView: React.FC<{ chain: string; address: string }> = ({ chain, a
   const tags = parseTags();
 
   // K线图数据
-  const klineData = generateKlineData(klinePeriod, price);
   const timeLabels = klineData.map(d => {
     const date = new Date(d.time);
-    if (['1m', '5m'].includes(klinePeriod)) return date.toLocaleTimeString();
+    if (['1m', '5m', '15m'].includes(klinePeriod)) return date.toLocaleTimeString();
     if (['1h', '4h'].includes(klinePeriod)) return `${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:00`;
     return `${date.getMonth() + 1}/${date.getDate()}`;
   });
@@ -467,8 +467,9 @@ const TokenQuickView: React.FC<{ chain: string; address: string }> = ({ chain, a
   };
 
   const klinePeriods = [
-    { key: '1m', label: '1分' }, { key: '5m', label: '5分' }, { key: '1h', label: '1时' },
-    { key: '4h', label: '4时' }, { key: '24h', label: '日线' }, { key: '7d', label: '周线' }, { key: '30d', label: '月线' },
+    { key: '1m', label: '1分' }, { key: '5m', label: '5分' }, { key: '15m', label: '15分' },
+    { key: '1h', label: '1时' }, { key: '4h', label: '4时' },
+    { key: '24h', label: '日线' }, { key: '7d', label: '周线' },
   ];
 
   const snapshotColumns = [
@@ -549,7 +550,17 @@ const TokenQuickView: React.FC<{ chain: string; address: string }> = ({ chain, a
           </Space>
         }
       >
-        <ReactECharts option={klineOption} style={{ height: 200 }} />
+        {klineLoading ? (
+          <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Spin size="small" />
+          </div>
+        ) : klineData.length === 0 ? (
+          <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8c8c8c' }}>
+            暂无K线数据
+          </div>
+        ) : (
+          <ReactECharts option={klineOption} style={{ height: 200 }} />
+        )}
       </Card>
 
       {/* 基础数据 + 持有人 + 标签审计 */}
