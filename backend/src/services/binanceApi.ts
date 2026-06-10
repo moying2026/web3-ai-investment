@@ -294,7 +294,13 @@ const CHAIN_TO_PLATFORM: Record<string, string> = {
 };
 
 // interval 映射：前端传值 → API 参数
+// 支持两种格式：前端数字格式(1/5/15/60/240/D/W)和标准时间格式(1m/5m/1h/1d/1w)
 const INTERVAL_MAP: Record<string, string> = {
+  // 前端数字格式（兼容旧前端）
+  '1': '1min', '5': '5min', '15': '15min', '30': '30min',
+  '60': '1h', '120': '2h', '240': '4h', '360': '6h', '480': '8h', '720': '12h',
+  'D': '1d', 'W': '1w', 'M': '1M',
+  // 标准时间格式
   '1m': '1min', '1min': '1min',
   '5m': '5min', '5min': '5min',
   '15m': '15min', '15min': '15min',
@@ -308,7 +314,7 @@ const INTERVAL_MAP: Record<string, string> = {
   '1d': '1d', '24h': '1d',
   '3d': '3d',
   '1w': '1w', '7d': '1w',
-  '1M': '1m', '30d': '1m',
+  '1M': '1M', '30d': '1M',
 };
 
 export interface KLineCandle {
@@ -340,8 +346,7 @@ export async function fetchKlines(
     limit: String(Math.min(Math.max(limit, 1), 1000)),
   });
 
-  await throttle();
-
+  // K线查询是用户请求，不进入轮询队列，直接发起请求
   const url = `${KLINE_API_BASE}?${params}`;
   const fetchOptions: any = {
     headers: { 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0' },
