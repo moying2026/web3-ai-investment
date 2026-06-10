@@ -15,6 +15,7 @@ import {
   getTokens, getTokenDetail, getTokenSnapshots,
   getSocialTopics, getStats
 } from '../services/tokenService';
+import { fetchKlines } from '../services/binanceApi';
 import { addSSEClient, getNewTokenBuffer, getLastPollTime, getSSEClientCount } from '../services/pollingService';
 import { ensureSimTables, placeOrder, closePosition, getPendingOrders, getTradesBySide, getPortfolioInfo, updateBudget } from '../services/simTradeService';
 
@@ -110,6 +111,21 @@ router.get('/tokens/:chain/:address/snapshots', (req: Request, res: Response) =>
       raw_data: safeJsonParse(s.raw_data),
     }));
     res.json({ code: 0, data: parsed });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/tokens/:chain/:address/klines — K线数据（OHLCV）
+router.get('/tokens/:chain/:address/klines', async (req: Request, res: Response) => {
+  try {
+    const chain = String(req.params.chain);
+    const address = String(req.params.address);
+    const interval = qs(req.query.interval) || '1h';
+    const limit = Math.min(Math.max(parseInt(qs(req.query.limit) || '100') || 100, 1), 1000);
+
+    const candles = await fetchKlines(chain, address, interval, limit);
+    res.json({ code: 0, data: candles });
   } catch (err: any) {
     res.status(500).json({ code: -1, message: err.message });
   }

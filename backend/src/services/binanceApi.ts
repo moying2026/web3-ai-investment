@@ -279,3 +279,91 @@ export async function fetchPriceInfo(chainId: string, contractAddress: string): 
 
   return json.data;
 }
+
+// ============ K线数据（OHLCV） ============
+// 数据源：Binance Web3 K线 API（dquery.sintral.io）
+// 返回格式：[[open, high, low, close, volume, timestamp_ms, trade_count], ...]
+
+const KLINE_API_BASE = 'https://dquery.sintral.io/u-kline/v1/k-line/candles';
+
+const CHAIN_TO_PLATFORM: Record<string, string> = {
+  '56': 'bsc', 'bsc': 'bsc',
+  '1': 'ethereum', 'eth': 'ethereum', 'ethereum': 'ethereum',
+  '8453': 'base', 'base': 'base',
+  'CT_501': 'solana', 'solana': 'solana',
+};
+
+// interval 映射：前端传值 → API 参数
+const INTERVAL_MAP: Record<string, string> = {
+  '1m': '1min', '1min': '1min',
+  '5m': '5min', '5min': '5min',
+  '15m': '15min', '15min': '15min',
+  '30m': '30min', '30min': '30min',
+  '1h': '1h',
+  '2h': '2h',
+  '4h': '4h',
+  '6h': '6h',
+  '8h': '8h',
+  '12h': '12h',
+  '1d': '1d', '24h': '1d',
+  '3d': '3d',
+  '1w': '1w', '7d': '1w',
+  '1M': '1m', '30d': '1m',
+};
+
+export interface KLineCandle {
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  timestamp: number;
+  trades: number;
+}
+
+export async function fetchKlines(
+  chainId: string,
+  contractAddress: string,
+  interval: string = '1h',
+  limit: number = 100
+): Promise<KLineCandle[]> {
+  const platform = CHAIN_TO_PLATFORM[chainId.toLowerCase()];
+  if (!platform) {
+    throw new Error(`不支持的链: ${chainId}，支持: ${Object.keys(CHAIN_TO_PLATFORM).join(', ')}`);
+  }
+
+  const apiInterval = INTERVAL_MAP[interval] || '1h';
+  const params = new URLSearchParams({
+    platform,
+    address: contractAddress,
+    interval: apiInterval,
+    limit: String(Math.min(Math.max(limit, 1), 1000)),
+  });
+
+  await throttle();
+
+  const url = `${KLINE_API_BASE}?${params}`;
+  const fetchOptions: any = {
+    headers: { 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0' },
+    signal: AbortSignal.timeout(15000),
+  };
+  if (dispatcher) fetchOptions.dispatcher = dispatcher;
+
+  const resp = await undiciFetch(url, fetchOptions);
+  const json = await resp.json();
+
+  if (!json.data || !Array.isArray(json.data)) {
+    throw new Error('K线API返回格式异常');
+  }
+
+  // 转换为标准 OHLCV 格式
+  return json.data.map((candle: number[]) => ({
+    open: candle[0],
+    high: candle[1],
+    low: candle[2],
+    close: candle[3],
+    volume: candle[4],
+    timestamp: candle[5],
+    trades: candle[6] || 0,
+  }));
+}
