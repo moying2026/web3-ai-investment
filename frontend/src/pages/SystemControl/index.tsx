@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Card, Row, Col, Switch, Space, Button, Tag, Spin, message } from 'antd';
+import { Card, Row, Col, Switch, Space, Button, Tag, Spin, message, Input } from 'antd';
 import {
   SyncOutlined,
   RocketOutlined,
@@ -47,10 +47,24 @@ const SystemControl: React.FC = () => {
   const [toggling, setToggling] = useState<Record<string, boolean>>({});
   const [autoMode, setAutoMode] = useState(false);
 
+  // 代理状态
+  const [proxyEnabled, setProxyEnabled] = useState(false);
+  const [proxyAddress, setProxyAddress] = useState('');
+  const [proxyLastCheck, setProxyLastCheck] = useState<string | null>(null);
+  const [proxyLastResult, setProxyLastResult] = useState<string | null>(null);
+  const [proxyTesting, setProxyTesting] = useState(false);
+  const [proxySaving, setProxySaving] = useState(false);
+
   const loadStatus = useCallback(async () => {
     try {
       const data = await systemApi.getStatus();
       setModules(Array.isArray(data) ? data : []);
+      // 加载代理状态
+      const proxy = await systemApi.getProxy();
+      setProxyEnabled(proxy.enabled ?? false);
+      setProxyAddress(proxy.address ?? '');
+      setProxyLastCheck(proxy.lastCheckTime ?? null);
+      setProxyLastResult(proxy.lastCheckResult ?? null);
     } catch { /* 静默 */ }
     finally { setLoading(false); }
   }, []);
@@ -81,6 +95,38 @@ const SystemControl: React.FC = () => {
       await loadStatus();
     } catch {
       message.error('操作失败');
+    }
+  };
+
+  // 代理保存
+  const handleProxySave = async () => {
+    setProxySaving(true);
+    try {
+      await systemApi.setProxy(proxyEnabled, proxyAddress);
+      message.success('代理设置已保存');
+      await loadStatus();
+    } catch {
+      message.error('代理设置失败');
+    } finally {
+      setProxySaving(false);
+    }
+  };
+
+  // 代理测试
+  const handleProxyTest = async () => {
+    setProxyTesting(true);
+    try {
+      const res = await systemApi.testProxy();
+      if (res?.success) {
+        message.success('代理连通测试成功');
+      } else {
+        message.error(`代理测试失败: ${res?.message || '未知错误'}`);
+      }
+      await loadStatus();
+    } catch {
+      message.error('代理测试失败');
+    } finally {
+      setProxyTesting(false);
     }
   };
 
@@ -131,6 +177,59 @@ const SystemControl: React.FC = () => {
               </Button>
               <Button icon={<SyncOutlined />} onClick={loadStatus} size="small" style={{ fontSize: 10, height: 20, padding: '0 4px' }}>刷新</Button>
             </Space>
+          </div>
+        </Card>
+
+        {/* 代理设置 */}
+        <Card size="small" style={{ marginBottom: 4 }} bodyStyle={{ padding: '4px 8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <span style={{ fontWeight: 'bold', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
+              <SyncOutlined style={{ fontSize: 12, color: '#1890ff' }} />
+              代理设置
+            </span>
+            <Switch
+              checked={proxyEnabled}
+              onChange={setProxyEnabled}
+              checkedChildren="启用"
+              unCheckedChildren="禁用"
+              style={{ height: 20, lineHeight: '20px', fontSize: 10 }}
+            />
+            {proxyLastCheck && (
+              <span style={{ color: '#8c8c8c', fontSize: 10 }}>
+                最后检测: {new Date(proxyLastCheck).toLocaleString()}
+              </span>
+            )}
+            {proxyLastResult && (
+              <Tag color={proxyLastResult === 'success' ? 'green' : 'red'} style={{ fontSize: 10, padding: '0 3px', margin: 0 }}>
+                {proxyLastResult === 'success' ? '成功' : '失败'}
+              </Tag>
+            )}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <Input
+              size="small"
+              placeholder="代理地址 (如 http://127.0.0.1:7890)"
+              value={proxyAddress}
+              onChange={(e) => setProxyAddress(e.target.value)}
+              style={{ flex: 1, fontSize: 11, height: 22 }}
+            />
+            <Button
+              size="small"
+              type="primary"
+              loading={proxySaving}
+              onClick={handleProxySave}
+              style={{ fontSize: 10, height: 22, padding: '0 6px' }}
+            >
+              保存
+            </Button>
+            <Button
+              size="small"
+              loading={proxyTesting}
+              onClick={handleProxyTest}
+              style={{ fontSize: 10, height: 22, padding: '0 6px' }}
+            >
+              测试
+            </Button>
           </div>
         </Card>
 

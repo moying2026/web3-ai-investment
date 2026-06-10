@@ -130,6 +130,10 @@ export const systemApi = {
     api.post(`/system/${moduleId}/toggle`, { running }),
   toggleAll: (running: boolean) =>
     api.post('/system/toggle-all', { running }),
+  getProxy: () => api.get<any, any>('/system/proxy').catch(() => ({ enabled: false, address: '', lastCheckTime: null, lastCheckResult: null })),
+  setProxy: (enabled: boolean, address: string) =>
+    api.post('/system/proxy', { enabled, address }),
+  testProxy: () => api.post<any, any>('/system/proxy/test', {}).catch(() => ({ success: false, message: '测试失败' })),
 };
 
 export const smartMoneyApi = {
