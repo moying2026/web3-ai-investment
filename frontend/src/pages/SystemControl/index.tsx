@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Card, Row, Col, Switch, Statistic, Space, Button, Tag, Spin, message } from 'antd';
+import { Card, Row, Col, Switch, Space, Button, Tag, Spin, message } from 'antd';
 import {
   SyncOutlined,
   RocketOutlined,
@@ -130,70 +130,57 @@ const SystemControl: React.FC = () => {
         </Card>
 
         {/* 模块控制卡片 */}
-        <Row gutter={[16, 16]}>
+        <Row gutter={[8, 8]}>
           {modules.map(mod => (
             <Col xs={24} key={mod.id}>
               <Card
                 size="small"
+                bodyStyle={{ padding: '8px 12px' }}
                 style={{
                   borderLeft: `4px solid ${mod.running ? moduleColors[mod.id] || '#1890ff' : '#d9d9d9'}`,
                   opacity: mod.running ? 1 : 0.7,
                 }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                  <Space>
-                    <span style={{ fontSize: 20, color: mod.running ? moduleColors[mod.id] : '#d9d9d9' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  {/* 标题 */}
+                  <span style={{ fontWeight: 'bold', minWidth: 70, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 16, color: mod.running ? moduleColors[mod.id] : '#d9d9d9' }}>
                       {moduleIcons[mod.id] || <ThunderboltOutlined />}
                     </span>
-                    <span style={{ fontWeight: 'bold' }}>{mod.name}</span>
-                  </Space>
-                  <div
-                    style={{
-                      width: 10, height: 10, borderRadius: '50%',
-                      background: mod.running ? '#52c41a' : '#d9d9d9',
-                      boxShadow: mod.running ? '0 0 6px #52c41a' : 'none',
-                    }}
-                  />
-                </div>
+                    {mod.name}
+                  </span>
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                  {/* 间隔 */}
                   <span style={{ color: '#8c8c8c', fontSize: 12 }}>
                     间隔 {mod.intervalMs < 1000 ? `${mod.intervalMs}ms` : `${(mod.intervalMs / 1000).toFixed(0)}s`}
                   </span>
+
+                  {/* 成功/失败 */}
+                  <span style={{ fontSize: 12 }}>
+                    <span style={{ color: '#52c41a' }}>✓{mod.successCount}</span>
+                    <span style={{ color: mod.failCount > 0 ? '#ff4d4f' : '#8c8c8c', marginLeft: 8 }}>✗{mod.failCount}</span>
+                  </span>
+
+                  {/* 最近运行 */}
+                  <span style={{ color: '#8c8c8c', fontSize: 12, flex: 1 }}>
+                    {formatTime(mod.lastRun)}
+                  </span>
+
+                  {/* 运行开关 */}
                   <Switch
                     checked={mod.running}
                     loading={toggling[mod.id]}
                     onChange={(checked) => handleToggle(mod.id, checked)}
                     checkedChildren="运行"
                     unCheckedChildren="暂停"
+                    size="small"
                   />
                 </div>
-
-                <Row gutter={8}>
-                  <Col span={12}>
-                    <Statistic
-                      title="成功"
-                      value={mod.successCount}
-                      valueStyle={{ fontSize: 16, color: '#52c41a' }}
-                    />
-                  </Col>
-                  <Col span={12}>
-                    <Statistic
-                      title="失败"
-                      value={mod.failCount}
-                      valueStyle={{ fontSize: 16, color: mod.failCount > 0 ? '#ff4d4f' : '#8c8c8c' }}
-                    />
-                  </Col>
-                </Row>
-
-                <div style={{ marginTop: 8, fontSize: 11, color: '#8c8c8c' }}>
-                  <div>最近运行: {formatTime(mod.lastRun)}</div>
-                  {mod.lastError && (
-                    <div style={{ color: '#ff4d4f', marginTop: 4 }}>
-                      错误: {mod.lastError.slice(0, 50)}
-                    </div>
-                  )}
-                </div>
+                {mod.lastError && (
+                  <div style={{ marginTop: 4, fontSize: 11, color: '#ff4d4f' }}>
+                    错误: {mod.lastError.slice(0, 80)}
+                  </div>
+                )}
               </Card>
             </Col>
           ))}
