@@ -45,6 +45,7 @@ const SystemControl: React.FC = () => {
   const [modules, setModules] = useState<ModuleStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState<Record<string, boolean>>({});
+  const [autoMode, setAutoMode] = useState(false);
 
   const loadStatus = useCallback(async () => {
     try {
@@ -126,6 +127,26 @@ const SystemControl: React.FC = () => {
               </Button>
               <Button icon={<SyncOutlined />} onClick={loadStatus}>刷新</Button>
             </Space>
+          </div>
+        </Card>
+
+        {/* 交易模式控制 */}
+        <Card size="small" style={{ marginBottom: 8 }} bodyStyle={{ padding: '8px 12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 6, minWidth: 70 }}>
+              <RobotOutlined style={{ fontSize: 16, color: '#722ed1' }} />
+              交易模式
+            </span>
+            <span style={{ color: '#8c8c8c', fontSize: 12, flex: 1 }}>
+              {autoMode ? 'AI全自动模式运行中' : 'AI辅助手动模式'}
+            </span>
+            <Switch
+              checked={autoMode}
+              onChange={setAutoMode}
+              checkedChildren="自动"
+              unCheckedChildren="手动"
+              size="small"
+            />
           </div>
         </Card>
 

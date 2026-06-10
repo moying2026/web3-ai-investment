@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Row, Col, Card, Statistic, Tag, Table, Badge, Switch, Space, message, Spin, Select, Input, InputNumber, Button, Form, Segmented, Progress, Tabs, Divider, Alert, Descriptions } from 'antd';
+import { Row, Col, Card, Statistic, Tag, Table, Badge, Space, message, Spin, Select, Input, InputNumber, Button, Form, Segmented, Progress, Tabs, Divider, Alert, Descriptions } from 'antd';
 import {
   WalletOutlined,
   FundOutlined,
@@ -761,7 +761,6 @@ const TokenQuickView: React.FC<{ chain: string; address: string }> = ({ chain, a
 
 
 const Dashboard: React.FC = () => {
-  const [autoMode, setAutoMode] = useState(false);
   const [tokens, setTokens] = useState<Token[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1252,16 +1251,6 @@ const Dashboard: React.FC = () => {
                         <Statistic title="话题" value={stats?.totalSocialTopics ?? '-'} prefix={<ThunderboltOutlined />} valueStyle={{ fontSize: 14 }} loading={!stats} />
                       </Card>
                     </div>
-                    {/* 下方AI辅助单独一行 */}
-                    <Card size="small" bodyStyle={{ padding: '8px 12px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                          <div style={{ color: '#8c8c8c', marginBottom: 4, fontSize: 12 }}>交易模式</div>
-                          <div style={{ fontSize: 16, fontWeight: 'bold' }}>{autoMode ? '🤖 AI全自动' : '👤 AI辅助'}</div>
-                        </div>
-                        <Switch checked={autoMode} onChange={setAutoMode} checkedChildren="自动" unCheckedChildren="手动" size="small" />
-                      </div>
-                    </Card>
                   </div>
                 ),
               },
