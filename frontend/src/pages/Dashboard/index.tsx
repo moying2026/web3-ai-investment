@@ -1236,7 +1236,7 @@ const Dashboard: React.FC = () => {
             items={[
               {
                 key: 'overview',
-                label: '市场概况',
+                label: '系统概况',
                 children: (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {/* 上方三个统计卡片水平排列 */}
