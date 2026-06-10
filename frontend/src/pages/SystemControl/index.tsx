@@ -157,8 +157,8 @@ const SystemControl: React.FC = () => {
 
                   {/* 成功/失败 */}
                   <span style={{ fontSize: 12 }}>
-                    <span style={{ color: '#52c41a' }}>✓{mod.successCount}</span>
-                    <span style={{ color: mod.failCount > 0 ? '#ff4d4f' : '#8c8c8c', marginLeft: 8 }}>✗{mod.failCount}</span>
+                    <span style={{ color: '#52c41a' }}>成功 {mod.successCount}</span>
+                    <span style={{ color: mod.failCount > 0 ? '#ff4d4f' : '#8c8c8c', marginLeft: 8 }}>失败 {mod.failCount}</span>
                   </span>
 
                   {/* 最近运行 */}
