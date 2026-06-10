@@ -915,6 +915,7 @@ const Dashboard: React.FC = () => {
             retryDelay = Math.min(retryDelay * 2, 30000);
           }
         };
+        // 新币推送（原有逻辑）
         es.onmessage = (e) => {
           try {
             JSON.parse(e.data);
@@ -924,6 +925,30 @@ const Dashboard: React.FC = () => {
             loadStats();
           } catch { /* ignore */ }
         };
+        // 价格更新事件（新增）
+        es.addEventListener('price_update', (e: MessageEvent) => {
+          try {
+            const update = JSON.parse(e.data);
+            // update 格式: { contract_address, chain_id, price_latest, percent_change_1h, percent_change_24h, volume_24h, ... }
+            setTokens(prev => prev.map(t => {
+              if (t.contract_address !== update.contract_address || t.chain_id !== update.chain_id) return t;
+              return {
+                ...t,
+                price_latest: update.price_latest ?? t.price_latest,
+                percent_change_1h: update.percent_change_1h ?? t.percent_change_1h,
+                percent_change_5m: update.percent_change_5m ?? t.percent_change_5m,
+                percent_change_1m: update.percent_change_1m ?? t.percent_change_1m,
+                percent_change_24h: update.percent_change_24h ?? t.percent_change_24h,
+                volume_24h: update.volume_24h ?? t.volume_24h,
+                volume_1h: update.volume_1h ?? t.volume_1h,
+                volume_5m: update.volume_5m ?? t.volume_5m,
+                holders: update.holders ?? t.holders,
+                liquidity: update.liquidity ?? t.liquidity,
+                market_cap: update.market_cap ?? t.market_cap,
+              };
+            }));
+          } catch { /* ignore */ }
+        });
       } catch { /* SSE 不可用 */ }
     };
 
