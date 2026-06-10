@@ -100,20 +100,22 @@ const SystemControl: React.FC = () => {
     <Spin spinning={loading}>
       <div>
         {/* 顶部操作栏 */}
-        <Card size="small" style={{ marginBottom: 16 }}>
+        <Card size="small" style={{ marginBottom: 4 }} bodyStyle={{ padding: '4px 8px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Space>
-              <ThunderboltOutlined style={{ fontSize: 20, color: '#1890ff' }} />
-              <Tag color={allRunning ? 'green' : allStopped ? 'default' : 'blue'}>
+            <Space size={4}>
+              <ThunderboltOutlined style={{ fontSize: 14, color: '#1890ff' }} />
+              <Tag color={allRunning ? 'green' : allStopped ? 'default' : 'blue'} style={{ fontSize: 11, padding: '0 4px' }}>
                 {allRunning ? '全部运行中' : allStopped ? '全部已暂停' : '部分运行中'}
               </Tag>
             </Space>
-            <Space>
+            <Space size={4}>
               <Button
                 type="primary"
                 icon={<PlayCircleOutlined />}
                 disabled={allRunning}
                 onClick={() => handleToggleAll(true)}
+                size="small"
+                style={{ fontSize: 11 }}
               >
                 全部启动
               </Button>
@@ -122,48 +124,50 @@ const SystemControl: React.FC = () => {
                 icon={<PauseCircleOutlined />}
                 disabled={allStopped}
                 onClick={() => handleToggleAll(false)}
+                size="small"
+                style={{ fontSize: 11 }}
               >
                 全部暂停
               </Button>
-              <Button icon={<SyncOutlined />} onClick={loadStatus}>刷新</Button>
+              <Button icon={<SyncOutlined />} onClick={loadStatus} size="small" style={{ fontSize: 11 }}>刷新</Button>
             </Space>
           </div>
         </Card>
 
         {/* 模块控制卡片 */}
-        <Row gutter={[8, 8]}>
+        <Row gutter={[4, 4]}>
           {modules.map(mod => (
             <Col xs={24} key={mod.id}>
               <Card
                 size="small"
-                bodyStyle={{ padding: '8px 12px' }}
+                bodyStyle={{ padding: '4px 8px' }}
                 style={{
-                  borderLeft: `4px solid ${mod.running ? moduleColors[mod.id] || '#1890ff' : '#d9d9d9'}`,
+                  borderLeft: `3px solid ${mod.running ? moduleColors[mod.id] || '#1890ff' : '#d9d9d9'}`,
                   opacity: mod.running ? 1 : 0.7,
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   {/* 标题 */}
-                  <span style={{ fontWeight: 'bold', minWidth: 70, display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: 16, color: mod.running ? moduleColors[mod.id] : '#d9d9d9' }}>
+                  <span style={{ fontWeight: 'bold', minWidth: 60, display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
+                    <span style={{ fontSize: 14, color: mod.running ? moduleColors[mod.id] : '#d9d9d9' }}>
                       {moduleIcons[mod.id] || <ThunderboltOutlined />}
                     </span>
                     {mod.name}
                   </span>
 
                   {/* 间隔 */}
-                  <span style={{ color: '#8c8c8c', fontSize: 12 }}>
+                  <span style={{ color: '#8c8c8c', fontSize: 11 }}>
                     间隔 {mod.intervalMs < 1000 ? `${mod.intervalMs}ms` : `${(mod.intervalMs / 1000).toFixed(0)}s`}
                   </span>
 
                   {/* 成功/失败 */}
-                  <span style={{ fontSize: 12 }}>
+                  <span style={{ fontSize: 11 }}>
                     <span style={{ color: '#52c41a' }}>成功 {mod.successCount}</span>
-                    <span style={{ color: mod.failCount > 0 ? '#ff4d4f' : '#8c8c8c', marginLeft: 8 }}>失败 {mod.failCount}</span>
+                    <span style={{ color: mod.failCount > 0 ? '#ff4d4f' : '#8c8c8c', marginLeft: 6 }}>失败 {mod.failCount}</span>
                   </span>
 
                   {/* 最近运行 */}
-                  <span style={{ color: '#8c8c8c', fontSize: 12, flex: 1 }}>
+                  <span style={{ color: '#8c8c8c', fontSize: 11, flex: 1 }}>
                     {formatTime(mod.lastRun)}
                   </span>
 
@@ -174,7 +178,7 @@ const SystemControl: React.FC = () => {
                     onChange={(checked) => handleToggle(mod.id, checked)}
                     checkedChildren="运行"
                     unCheckedChildren="暂停"
-                    style={{ height: 25, lineHeight: "25px" }}
+                    style={{ height: 20, lineHeight: '20px', fontSize: 10 }}
                   />
                 </div>
                 {mod.lastError && (
@@ -188,13 +192,13 @@ const SystemControl: React.FC = () => {
         </Row>
 
         {/* 交易模式控制 */}
-        <Card size="small" style={{ marginTop: 8 }} bodyStyle={{ padding: '8px 12px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 6, minWidth: 70 }}>
-              <RobotOutlined style={{ fontSize: 16, color: '#722ed1' }} />
+        <Card size="small" style={{ marginTop: 4 }} bodyStyle={{ padding: '4px 8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 4, minWidth: 60, fontSize: 12 }}>
+              <RobotOutlined style={{ fontSize: 14, color: '#722ed1' }} />
               交易模式
             </span>
-            <span style={{ color: '#8c8c8c', fontSize: 12, flex: 1 }}>
+            <span style={{ color: '#8c8c8c', fontSize: 11, flex: 1 }}>
               {autoMode ? 'AI全自动模式运行中' : 'AI辅助手动模式'}
             </span>
             <Switch
@@ -202,7 +206,7 @@ const SystemControl: React.FC = () => {
               onChange={setAutoMode}
               checkedChildren="自动"
               unCheckedChildren="手动"
-              style={{ height: 25, lineHeight: "25px" }}
+              style={{ height: 20, lineHeight: '20px', fontSize: 10 }}
             />
           </div>
         </Card>
