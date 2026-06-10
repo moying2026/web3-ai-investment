@@ -130,26 +130,6 @@ const SystemControl: React.FC = () => {
           </div>
         </Card>
 
-        {/* 交易模式控制 */}
-        <Card size="small" style={{ marginBottom: 8 }} bodyStyle={{ padding: '8px 12px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 6, minWidth: 70 }}>
-              <RobotOutlined style={{ fontSize: 16, color: '#722ed1' }} />
-              交易模式
-            </span>
-            <span style={{ color: '#8c8c8c', fontSize: 12, flex: 1 }}>
-              {autoMode ? 'AI全自动模式运行中' : 'AI辅助手动模式'}
-            </span>
-            <Switch
-              checked={autoMode}
-              onChange={setAutoMode}
-              checkedChildren="自动"
-              unCheckedChildren="手动"
-              size="small"
-            />
-          </div>
-        </Card>
-
         {/* 模块控制卡片 */}
         <Row gutter={[8, 8]}>
           {modules.map(mod => (
@@ -194,7 +174,7 @@ const SystemControl: React.FC = () => {
                     onChange={(checked) => handleToggle(mod.id, checked)}
                     checkedChildren="运行"
                     unCheckedChildren="暂停"
-                    size="small"
+                    style={{ height: 33 }}
                   />
                 </div>
                 {mod.lastError && (
@@ -206,6 +186,26 @@ const SystemControl: React.FC = () => {
             </Col>
           ))}
         </Row>
+
+        {/* 交易模式控制 */}
+        <Card size="small" style={{ marginTop: 8 }} bodyStyle={{ padding: '8px 12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 6, minWidth: 70 }}>
+              <RobotOutlined style={{ fontSize: 16, color: '#722ed1' }} />
+              交易模式
+            </span>
+            <span style={{ color: '#8c8c8c', fontSize: 12, flex: 1 }}>
+              {autoMode ? 'AI全自动模式运行中' : 'AI辅助手动模式'}
+            </span>
+            <Switch
+              checked={autoMode}
+              onChange={setAutoMode}
+              checkedChildren="自动"
+              unCheckedChildren="手动"
+              style={{ height: 33 }}
+            />
+          </div>
+        </Card>
 
         {modules.length === 0 && !loading && (
           <Card style={{ textAlign: 'center', padding: 60, color: '#8c8c8c' }}>
