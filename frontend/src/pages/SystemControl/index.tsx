@@ -132,7 +132,7 @@ const SystemControl: React.FC = () => {
         {/* 模块控制卡片 */}
         <Row gutter={[16, 16]}>
           {modules.map(mod => (
-            <Col xs={24} sm={12} lg={8} xl={4} key={mod.id}>
+            <Col xs={24} key={mod.id}>
               <Card
                 size="small"
                 style={{
