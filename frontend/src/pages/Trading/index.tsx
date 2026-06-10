@@ -14,35 +14,7 @@ import type { Token } from '../../types';
 import { tokenApi, simApi, aiApi } from '../../services/api';
 import { formatPrice, formatVolume, formatNumber } from '../../utils/format';
 
-// ===== K 线 mock 数据生成 =====
-function generateKlineData(period: string, basePrice: number) {
-  const cfg: Record<string, { count: number; intervalMs: number }> = {
-    '1m':  { count: 120, intervalMs: 60000 },
-    '5m':  { count: 100, intervalMs: 300000 },
-    '1h':  { count: 72,  intervalMs: 3600000 },
-    '4h':  { count: 60,  intervalMs: 14400000 },
-    '24h': { count: 30,  intervalMs: 86400000 },
-    '7d':  { count: 28,  intervalMs: 604800000 },
-    '30d': { count: 30,  intervalMs: 2592000000 },
-  };
-  const c = cfg[period] || cfg['1h'];
-  const now = Date.now();
-  const data: Array<{ time: number; open: number; high: number; low: number; close: number; volume: number }> = [];
-  let last = basePrice > 0 ? basePrice : 1;
-  for (let i = 0; i < c.count; i++) {
-    const time = now - (c.count - i) * c.intervalMs;
-    const vol = basePrice * 0.03;
-    const open = last;
-    const change = (Math.random() - 0.48) * vol;
-    const close = Math.max(open + change, basePrice * 0.5);
-    const high = Math.max(open, close) + Math.random() * vol * 0.5;
-    const low = Math.min(open, close) - Math.random() * vol * 0.3;
-    const volume = Math.random() * 500000 + 50000;
-    data.push({ time, open, high, low, close, volume });
-    last = close;
-  }
-  return data;
-}
+
 
 // ===== 类型定义 =====
 interface SimTrade {
@@ -288,6 +260,33 @@ const Trading: React.FC = () => {
 
   // K 线
   const [klinePeriod, setKlinePeriod] = useState('1h');
+  const [klineData, setKlineData] = useState<Array<{ time: number; open: number; high: number; low: number; close: number; volume: number }>>([]);
+  const [klineLoading, setKlineLoading] = useState(false);
+
+  // chain_id → 后端链名
+  const chainNameMap: Record<string, string> = { '56': 'bsc', '1': 'eth', '8453': 'base', 'CT_501': 'solana' };
+  const mapInterval = (p: string): string => {
+    const m: Record<string, string> = { '1m': '1', '5m': '5', '15m': '15', '1h': '60', '4h': '240', '24h': 'D', '7d': 'W' };
+    return m[p] ?? 'D';
+  };
+
+  // K线数据获取
+  useEffect(() => {
+    if (!selectedTrade) { setKlineData([]); return; }
+    const chainName = chainNameMap[selectedTrade.chain_id] ?? selectedTrade.chain_id;
+    setKlineLoading(true);
+    tokenApi.getKlines(chainName, selectedTrade.contract_address, mapInterval(klinePeriod), 100)
+      .then((res: any) => {
+        const raw = Array.isArray(res) ? res : (res?.data ?? []);
+        setKlineData(raw.map((d: any) => ({
+          time: d.timestamp ?? d.time,
+          open: d.open, high: d.high, low: d.low, close: d.close,
+          volume: d.volume ?? 0,
+        })));
+      })
+      .catch(() => setKlineData([]))
+      .finally(() => setKlineLoading(false));
+  }, [selectedTrade, klinePeriod]);
 
   // ===== 数据加载 =====
   const loadStats = useCallback(async () => {
@@ -466,15 +465,9 @@ const Trading: React.FC = () => {
   };
 
   // ===== K 线图表 =====
-  const klineData = useMemo(() => {
-    if (!selectedTrade) return [];
-    const price = parseFloat(selectedTrade.price) || 1;
-    return generateKlineData(klinePeriod, price);
-  }, [selectedTrade, klinePeriod]);
-
   const klineTimeLabels = klineData.map(d => {
     const date = new Date(d.time);
-    if (['1m', '5m'].includes(klinePeriod)) return date.toLocaleTimeString();
+    if (['1m', '5m', '15m'].includes(klinePeriod)) return date.toLocaleTimeString();
     if (['1h', '4h'].includes(klinePeriod)) return `${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:00`;
     return `${date.getMonth() + 1}/${date.getDate()}`;
   });
@@ -632,7 +625,17 @@ const Trading: React.FC = () => {
                 </Space>
               }
             >
-              <ReactECharts option={klineOption} style={{ flex: 1, minHeight: 120 }} />
+              {klineLoading ? (
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Spin size="small" />
+                </div>
+              ) : klineData.length === 0 ? (
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8c8c8c' }}>
+                  暂无K线数据
+                </div>
+              ) : (
+                <ReactECharts option={klineOption} style={{ flex: 1, minHeight: 120 }} />
+              )}
             </Card>
           ) : (
             <Card size="small" style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
