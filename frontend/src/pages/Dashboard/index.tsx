@@ -1425,13 +1425,20 @@ const Dashboard: React.FC = () => {
               items={[
                 {
                   key: 'Tab1',
+                  label: '运行状态',
+                  children: <div style={{ overflowY: 'auto', height: 460, fontSize: 12 }}>
+                    <SystemControl />
+                  </div>,
+                },
+                {
+                  key: 'Tab2',
                   label: `代币详情${selectedToken ? ` (${selectedToken.symbol})` : ''}`,
                   children: selectedToken
                     ? <TokenQuickView chain={selectedToken.chain} address={selectedToken.address} />
                     : <div style={{ padding: '40px 0', color: '#8c8c8c', textAlign: 'center' }}>请点击左侧代币查看详情</div>,
                 },
                 {
-                  key: 'Tab2',
+                  key: 'Tab3',
                   label: '发行方',
                   children: <div style={{ overflowY: 'auto', height: 460 }}>
                     {selectedToken?.creatorAddress
@@ -1440,7 +1447,7 @@ const Dashboard: React.FC = () => {
                   </div>,
                 },
                 {
-                  key: 'Tab3',
+                  key: 'Tab4',
                   label: '综合评分',
                   children: <div style={{ overflowY: 'auto', height: 460 }}>
                     {selectedToken
@@ -1449,19 +1456,12 @@ const Dashboard: React.FC = () => {
                   </div>,
                 },
                 {
-                  key: 'Tab4',
+                  key: 'Tab5',
                   label: 'AI 讨论',
                   children: <div style={{ overflowY: 'auto', height: 460 }}>
                     {selectedToken
                       ? <AIDiscussionPanel chain={selectedToken.chain} address={selectedToken.address} />
                       : <div style={{ padding: '40px 0', color: '#8c8c8c', textAlign: 'center' }}>请点击左侧代币启动 AI 讨论</div>}
-                  </div>,
-                },
-                {
-                  key: 'Tab5',
-                  label: '系统控制',
-                  children: <div style={{ overflowY: 'auto', height: 460, fontSize: 12 }}>
-                    <SystemControl />
                   </div>,
                 },
               ]}
