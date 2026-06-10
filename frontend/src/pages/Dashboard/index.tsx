@@ -463,7 +463,7 @@ const TokenQuickView: React.FC<{ chain: string; address: string }> = ({ chain, a
         return v.toFixed(2);
       } },
     },
-    dataZoom: [{ type: 'inside' as const, start: 60, end: 100 }, { type: 'slider' as const, start: 60, end: 100, height: 20, bottom: 5 }],
+    dataZoom: [{ type: 'inside' as const, start: 0, end: 100 }, { type: 'slider' as const, start: 0, end: 100, height: 20, bottom: 5 }],
     series: [{
       name: 'K线', type: 'candlestick' as const,
       data: klineData.map(d => [d.open, d.close, d.low, d.high]),
@@ -811,7 +811,7 @@ const KlinePanel: React.FC<{ chain: string; address: string }> = ({ chain, addre
         return v.toFixed(2);
       } },
     },
-    dataZoom: [{ type: 'inside' as const, start: 60, end: 100 }, { type: 'slider' as const, start: 60, end: 100, height: 20, bottom: 5 }],
+    dataZoom: [{ type: 'inside' as const, start: 0, end: 100 }, { type: 'slider' as const, start: 0, end: 100, height: 20, bottom: 5 }],
     series: [{
       name: 'K线', type: 'candlestick' as const,
       data: klineData.map(d => [d.open, d.close, d.low, d.high]),

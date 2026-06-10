@@ -492,8 +492,8 @@ const Trading: React.FC = () => {
       },
     },
     dataZoom: [
-      { type: 'inside' as const, start: 60, end: 100 },
-      { type: 'slider' as const, start: 60, end: 100, height: 20, bottom: 5 },
+      { type: 'inside' as const, start: 0, end: 100 },
+      { type: 'slider' as const, start: 0, end: 100, height: 20, bottom: 5 },
     ],
     series: [{
       name: 'K线',
