@@ -97,17 +97,17 @@ export async function pollTokenData(): Promise<void> {
           // SSE 推送价格变化
           broadcast('price_update', {
             type: 'price_update',
-            chainId: token.chainId,
-            contractAddress: token.contractAddress,
+            chain_id: token.chainId,
+            contract_address: token.contractAddress,
             symbol: token.symbol,
-            price: token.price,
-            percentChange1h: token.percentChange1h,
-            percentChange24h: token.percentChange24h,
-            volume24h: token.volume24h,
+            price_latest: token.price,
+            percent_change_1h: token.percentChange1h,
+            percent_change_24h: token.percentChange24h,
+            volume_24h: token.volume24h,
             holders: token.holders,
             liquidity: token.liquidity,
-            marketCap: token.marketCap,
-            updatedAt: new Date().toISOString(),
+            market_cap: token.marketCap,
+            updated_at: new Date().toISOString(),
           });
         }
       }
@@ -177,17 +177,17 @@ export async function pollLatestTokens(): Promise<void> {
             totalUpdated++;
             broadcast('price_update', {
               type: 'price_update',
-              chainId: token.chainId,
-              contractAddress: token.contractAddress,
+              chain_id: token.chainId,
+              contract_address: token.contractAddress,
               symbol: token.symbol,
-              price: token.price,
-              percentChange1h: token.percentChange1h,
-              percentChange24h: token.percentChange24h,
-              volume24h: token.volume24h,
+              price_latest: token.price,
+              percent_change_1h: token.percentChange1h,
+              percent_change_24h: token.percentChange24h,
+              volume_24h: token.volume24h,
               holders: token.holders,
               liquidity: token.liquidity,
-              marketCap: token.marketCap,
-              updatedAt: new Date().toISOString(),
+              market_cap: token.marketCap,
+              updated_at: new Date().toISOString(),
             });
           }
         }
