@@ -557,15 +557,15 @@ const TokenQuickView: React.FC<{ chain: string; address: string }> = ({ chain, a
         }
       >
         {klineLoading ? (
-          <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ height: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Spin size="small" />
           </div>
         ) : klineData.length === 0 ? (
-          <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8c8c8c' }}>
+          <div style={{ height: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8c8c8c' }}>
             暂无K线数据
           </div>
         ) : (
-          <ReactECharts option={klineOption} style={{ height: 200 }} />
+          <ReactECharts option={klineOption} style={{ height: 100 }} />
         )}
       </Card>
 
@@ -827,7 +827,7 @@ const KlinePanel: React.FC<{ chain: string; address: string }> = ({ chain, addre
   ];
 
   return (
-    <div style={{ height: 460, display: 'flex', flexDirection: 'column' }}>
+    <div style={{ height: 230, display: 'flex', flexDirection: 'column' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 8px', borderBottom: '1px solid #f0f0f0', background: '#fafafa' }}>
         <span style={{ fontSize: 11, color: '#8c8c8c' }}>K线图 · 真实数据</span>
         <Space size={4}>
