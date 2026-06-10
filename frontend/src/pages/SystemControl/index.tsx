@@ -100,22 +100,22 @@ const SystemControl: React.FC = () => {
     <Spin spinning={loading}>
       <div>
         {/* 顶部操作栏 */}
-        <Card size="small" style={{ marginBottom: 4 }} bodyStyle={{ padding: '4px 8px' }}>
+        <Card size="small" style={{ marginBottom: 2 }} bodyStyle={{ padding: '2px 6px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Space size={4}>
-              <ThunderboltOutlined style={{ fontSize: 14, color: '#1890ff' }} />
-              <Tag color={allRunning ? 'green' : allStopped ? 'default' : 'blue'} style={{ fontSize: 11, padding: '0 4px' }}>
+            <Space size={2}>
+              <ThunderboltOutlined style={{ fontSize: 12, color: '#1890ff' }} />
+              <Tag color={allRunning ? 'green' : allStopped ? 'default' : 'blue'} style={{ fontSize: 10, padding: '0 3px', lineHeight: '16px', margin: 0 }}>
                 {allRunning ? '全部运行中' : allStopped ? '全部已暂停' : '部分运行中'}
               </Tag>
             </Space>
-            <Space size={4}>
+            <Space size={2}>
               <Button
                 type="primary"
                 icon={<PlayCircleOutlined />}
                 disabled={allRunning}
                 onClick={() => handleToggleAll(true)}
                 size="small"
-                style={{ fontSize: 11 }}
+                style={{ fontSize: 10, height: 20, padding: '0 4px' }}
               >
                 全部启动
               </Button>
@@ -125,11 +125,11 @@ const SystemControl: React.FC = () => {
                 disabled={allStopped}
                 onClick={() => handleToggleAll(false)}
                 size="small"
-                style={{ fontSize: 11 }}
+                style={{ fontSize: 10, height: 20, padding: '0 4px' }}
               >
                 全部暂停
               </Button>
-              <Button icon={<SyncOutlined />} onClick={loadStatus} size="small" style={{ fontSize: 11 }}>刷新</Button>
+              <Button icon={<SyncOutlined />} onClick={loadStatus} size="small" style={{ fontSize: 10, height: 20, padding: '0 4px' }}>刷新</Button>
             </Space>
           </div>
         </Card>
