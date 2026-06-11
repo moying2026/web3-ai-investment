@@ -17,7 +17,7 @@ import {
 } from '../services/tokenService';
 import { fetchKlines } from '../services/binanceApi';
 import { getProxyStatus, setProxy, testProxy } from '../services/proxyService';
-import { addLogSSEClient, getRecentLogs, getLogSSEClientCount } from '../services/logService';
+import { addLogSSEClient, getRecentLogs, getLogSSEClientCount, logInfo, logWarn, logError } from '../services/logService';
 import { addSSEClient, getNewTokenBuffer, getLastPollTime, getSSEClientCount } from '../services/pollingService';
 import { ensureSimTables, placeOrder, closePosition, getPendingOrders, getTradesBySide, getPortfolioInfo, updateBudget } from '../services/simTradeService';
 
@@ -979,11 +979,13 @@ router.post('/system/:moduleId/toggle', (req: Request, res: Response) => {
 
     const success = toggleModule(moduleId, running);
     if (!success) {
+      logWarn('系统控制', `模块切换失败: ${moduleId} 不存在`);
       res.status(404).json({ code: -1, message: `Module ${moduleId} not found` });
       return;
     }
 
     const status = getModuleStatus(moduleId);
+    logInfo('系统控制', `模块切换: ${moduleId} → ${running ? '启动' : '暂停'}`);
     res.json({ code: 0, data: status });
   } catch (err: any) {
     res.status(500).json({ code: -1, message: err.message });
@@ -1002,10 +1004,12 @@ router.post('/system/toggle-all', (req: Request, res: Response) => {
     }
 
     const statuses = getAllModuleStatuses();
+    const startTime = Date.now();
     for (const status of statuses) {
       toggleModule(status.id, running);
     }
-
+    const elapsed = Date.now() - startTime;
+    logInfo('系统控制', `全部${running ? '启动' : '暂停'}: ${statuses.length} 个模块, 耗时 ${elapsed}ms`);
     res.json({ code: 0, data: { message: `All modules ${running ? 'started' : 'paused'}`, count: statuses.length } });
   } catch (err: any) {
     res.status(500).json({ code: -1, message: err.message });
@@ -1262,11 +1266,13 @@ router.post('/system/proxy', async (req: Request, res: Response) => {
     }
     const result = setProxy(address, enabled);
     if (!result.success) {
+      logError('代理检测', `代理保存失败: ${result.message}`);
       res.status(500).json({ code: -1, message: result.message });
       return;
     }
     // 设置后立即测试连通性
     const test = await testProxy();
+    logInfo('代理检测', `代理已保存: ${address} (${enabled ? '启用' : '禁用'}), 连通性: ${test.success ? 'OK' : 'FAIL'}`);
     res.json({ code: 0, data: { ...result, test } });
   } catch (err: any) {
     res.status(500).json({ code: -1, message: err.message });
@@ -1316,7 +1322,10 @@ router.get('/system/logs/history', (_req: Request, res: Response) => {
 // POST /api/system/proxy/test — 测试代理连通性
 router.post('/system/proxy/test', async (_req: Request, res: Response) => {
   try {
+    const startTime = Date.now();
     const result = await testProxy();
+    const elapsed = Date.now() - startTime;
+    logInfo('代理检测', `连通性测试: ${result.success ? '成功' : '失败'}, 耗时 ${elapsed}ms`);
     res.json({ code: 0, data: result });
   } catch (err: any) {
     res.status(500).json({ code: -1, message: err.message });
