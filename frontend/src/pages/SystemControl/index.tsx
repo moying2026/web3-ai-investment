@@ -64,7 +64,7 @@ const SystemControl: React.FC = () => {
       setProxyEnabled(proxy.enabled ?? false);
       setProxyAddress(proxy.address ?? '');
       setProxyLastCheck(proxy.lastCheckTime ?? null);
-      setProxyLastResult(proxy.lastCheckResult ?? null);
+      setProxyLastResult(proxy.lastCheckResult === true ? 'success' : proxy.lastCheckResult === false ? 'fail' : null);
     } catch { /* 静默 */ }
     finally { setLoading(false); }
   }, []);
@@ -117,14 +117,14 @@ const SystemControl: React.FC = () => {
     setProxyTesting(true);
     try {
       const res = await systemApi.testProxy();
-      if (res?.success) {
-        message.success('代理连通测试成功');
-      } else {
-        message.error(`代理测试失败: ${res?.message || '未知错误'}`);
-      }
+      // 直接更新面板检测时间和结果，不弹窗
+      setProxyLastCheck(new Date().toISOString());
+      setProxyLastResult(res?.success ? 'success' : 'fail');
+      // 同步后端最新状态
       await loadStatus();
     } catch {
-      message.error('代理测试失败');
+      setProxyLastCheck(new Date().toISOString());
+      setProxyLastResult('fail');
     } finally {
       setProxyTesting(false);
     }
