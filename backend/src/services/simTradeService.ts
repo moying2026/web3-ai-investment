@@ -3,7 +3,7 @@
 import { db } from '../db/database';
 import { AnalysisResult } from './aiAnalysisService';
 import { v4 as uuidv4 } from 'uuid';
-import { logInfo, logWarn, logError } from './logService';
+import { logInfo, logWarn, logError, logDebug } from './logService';
 
 interface SqliteStatement {
   run(...params: any[]): { changes: number };
@@ -223,7 +223,7 @@ export function placeOrder(params: PlaceOrderParams): any {
   if (params.side === 'BUY') {
     const budgetCheck = checkBudget(fromAmount, params.chain_id);
     if (!budgetCheck.ok) {
-      logWarn('模拟交易', `SKIP ${params.symbol}: ${budgetCheck.reason}`);
+      logDebug('模拟交易', `SKIP ${params.symbol}: ${budgetCheck.reason}`);
       return { success: false, reason: budgetCheck.reason };
     }
   }

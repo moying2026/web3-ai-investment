@@ -17,7 +17,7 @@ export interface LogEntry {
 
 // ============ 内存环形缓冲区 ============
 
-const MAX_LOGS = 500;          // 缓冲区容量
+const MAX_LOGS = 5000;         // 缓冲区容量
 const logBuffer: LogEntry[] = [];  // 环形缓冲区
 
 function pushLog(entry: LogEntry): void {
