@@ -70,6 +70,7 @@ router.get('/tokens', (req: Request, res: Response) => {
       liquidity_max: qn(req.query.liquidity_max),
       is_new_coin: qn(req.query.is_new_coin),
     });
+    logInfo('API', `代币列表: page=${result.page} total=${result.total} chain=${qs(req.query.chain) || 'all'}`);
     res.json({ code: 0, data: result });
   } catch (err: any) {
     res.status(500).json({ code: -1, message: err.message });
@@ -83,6 +84,7 @@ router.get('/tokens/:chain/:address', (req: Request, res: Response) => {
     const address = String(req.params.address);
     const token = getTokenDetail(chain, address);
     if (!token) {
+      logWarn('API', `代币详情: ${chain}/${address} 未找到`);
       res.status(404).json({ code: -1, message: '代币未找到' });
       return;
     }
@@ -112,6 +114,7 @@ router.get('/tokens/:chain/:address/snapshots', (req: Request, res: Response) =>
       ...s,
       raw_data: safeJsonParse(s.raw_data),
     }));
+    logInfo('API', `快照: ${chain}/${address} 返回${parsed.length}条`);
     res.json({ code: 0, data: parsed });
   } catch (err: any) {
     res.status(500).json({ code: -1, message: err.message });
@@ -127,6 +130,7 @@ router.get('/tokens/:chain/:address/klines', async (req: Request, res: Response)
     const limit = Math.min(Math.max(parseInt(qs(req.query.limit) || '100') || 100, 1), 1000);
 
     const candles = await fetchKlines(chain, address, interval, limit);
+    logInfo('API', `K线: ${chain}/${address} interval=${interval} limit=${limit} 返回${candles.length}条`);
     res.json({ code: 0, data: candles });
   } catch (err: any) {
     res.status(500).json({ code: -1, message: err.message });
@@ -270,6 +274,7 @@ router.get('/social-topics', (req: Request, res: Response) => {
 router.get('/stats', (_req: Request, res: Response) => {
   try {
     const stats = getStats();
+    logInfo('API', `统计数据: totalTokens=${stats.totalTokens}`);
     res.json({ code: 0, data: stats });
   } catch (err: any) {
     res.status(500).json({ code: -1, message: err.message });
@@ -472,8 +477,9 @@ router.post('/sim/trades', (req: Request, res: Response) => {
       res.status(400).json({ code: -1, message: '缺少必填字段: chain_id, contract_address, side' }); return;
     }
     const result = placeOrder({ chain_id, contract_address, symbol, dex, side, from_token, from_amount: from_amount ? parseFloat(from_amount) : undefined, from_contract, to_token, to_amount: to_amount ? parseFloat(to_amount) : undefined, to_contract, price: price ? parseFloat(price) : undefined, price_impact: price_impact ? parseFloat(price_impact) : undefined, gas_fee: gas_fee ? parseFloat(gas_fee) : undefined, gas_token, is_simulated: is_simulated ?? 1, strategy, trigger_reason, stop_loss_percent, take_profit_percent });
-    if (!result.success) { res.status(400).json({ code: -1, message: result.reason }); return; }
+    if (!result.success) { logWarn('模拟交易', `创建交易失败: ${symbol} ${side} - ${result.reason}`); res.status(400).json({ code: -1, message: result.reason }); return; }
     const trade = (db.prepare('SELECT * FROM sim_trades WHERE trade_id = ?')).get(result.trade_id);
+    logInfo('模拟交易', `创建交易: ${side} ${symbol} @ ${price || 'market'}, trade_id=${result.trade_id}`);
     res.json({ code: 0, data: trade });
   } catch (err: any) {
     res.status(500).json({ code: -1, message: err.message });
@@ -538,6 +544,7 @@ router.put('/sim/trades/:id/close', (req: Request, res: Response) => {
 
     const updated = (db.prepare('SELECT * FROM sim_trades WHERE trade_id = ?')).get(tradeId);
     const sellRecord = (db.prepare('SELECT * FROM sim_trades WHERE parent_trade_id = ? AND side = ? ORDER BY created_at DESC LIMIT 1').get(tradeId, 'SELL')) as any;
+    logInfo('模拟交易', `手动平仓: ${trade.symbol} @ ${price}, reason=${reason || 'manual'}`);
     res.json({ code: 0, data: { buy: updated, sell: sellRecord } });
   } catch (err: any) {
     res.status(500).json({ code: -1, message: err.message });
@@ -695,6 +702,7 @@ router.get('/sim/daily-pnl', (req: Request, res: Response) => {
       cursor.setDate(cursor.getDate() + 1);
     }
 
+    logInfo('API', `收益曲线: days=${days} 数据点=${result.length}`);
     res.json({ code: 0, data: result });
   } catch (err: any) {
     res.status(500).json({ code: -1, message: err.message });
@@ -761,6 +769,8 @@ router.get('/ai/analysis', (_req: Request, res: Response) => {
         COUNT(*) as count
       FROM ai_analysis GROUP BY band ORDER BY band
     `).all();
+
+    logInfo('API', `AI分析统计: total=${total} avgScore=${parseFloat(avgScore).toFixed(1)}`);
 
     res.json({
       code: 0,
@@ -905,6 +915,7 @@ router.get('/agents/score/:chain/:address', (req: Request, res: Response) => {
     const address = String(req.params.address);
     const { evaluateDecision } = require('../services/agents/decisionAgent');
     const result = evaluateDecision({ chainId: chain, contractAddress: address });
+    logInfo('Agent评分', `${chain}/${address}: score=${result.score} rec=${result.recommendation}`);
     res.json({ code: 0, data: result });
   } catch (err: any) {
     res.status(500).json({ code: -1, message: err.message });
@@ -1025,6 +1036,7 @@ router.post('/agents/discuss/:chain/:contractAddress', async (req: Request, res:
     const chain = resolveChainId(String(req.params.chain));
     const contract = String(req.params.contractAddress);
     const result = await runDiscussion(chain, contract);
+    logInfo('Agent讨论', `${chain}/${contract}: 讨论完成`);
     res.json({ code: 0, data: result });
   } catch (err: any) {
     res.status(500).json({ code: -1, message: err.message });
@@ -1038,6 +1050,7 @@ router.get('/agents/discuss/:chain/:contractAddress/history', (req: Request, res
     const contract = String(req.params.contractAddress);
     const limit = parseInt(qs(req.query.limit) || '10') || 10;
     const result = getDiscussionHistory(chain, contract, limit);
+    logInfo('Agent讨论', `${chain}/${contract}: 查询历史 limit=${limit}`);
     res.json({ code: 0, data: result });
   } catch (err: any) {
     res.status(500).json({ code: -1, message: err.message });

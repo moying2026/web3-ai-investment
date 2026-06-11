@@ -272,7 +272,7 @@ export async function checkAndExecuteSnapshots(): Promise<void> {
                 uniqueTrader24h: '0',
                 count24h: '0',
               } as any;
-              console.log(`[Snapshot] ${plan.snapshot_type} 使用价格 API: ${priceInfo.price}`);
+              logInfo('快照', `${plan.snapshot_type} 使用价格 API: ${priceInfo.price}`);
             }
           } catch (e) {
             // 价格 API 也失败
@@ -280,20 +280,20 @@ export async function checkAndExecuteSnapshots(): Promise<void> {
         }
 
         executeSnapshot(plan, tokenData);
-        console.log(`[Snapshot] ${plan.snapshot_type} 快照完成: ${plan.chain_id}:${plan.contract_address}`);
+        logInfo('快照', `${plan.snapshot_type} 快照完成: ${plan.chain_id}:${plan.contract_address}`);
       } catch (err) {
         logError('快照', `快照执行失败 ${plan.snapshot_type}: ${err instanceof Error ? err.message : err}`);
         executeSnapshot(plan, null);
       }
     }
   } catch (err) {
-    console.error('[Snapshot] 快照检查失败:', err);
+    logError('快照', `快照检查失败: ${err instanceof Error ? err.message : err}`);
   }
 }
 
 // 启动所有轮询
 export function startPolling(): void {
-  console.log('[Polling] 启动轮询服务...');
+  logInfo('轮询', '启动轮询服务...');
 
   // 初始化系统控制
   initSystemControl();
@@ -344,7 +344,7 @@ export function startPolling(): void {
       const results = analyzeNewTokens();
       // 全量买入：所有新币都买，不依赖 AI 评分
       const buyCount = executeAutoBuyAll();
-      if (buyCount > 0) console.log(`[Sim] 全量买入 ${buyCount} 笔`);
+      if (buyCount > 0) logInfo('模拟交易', `全量买入 ${buyCount} 笔`);
       recordRun('ai', true, undefined, { analyzed: results.length, bought: buyCount });
     } catch (err) {
       recordRun('ai', false, String(err));
@@ -369,9 +369,9 @@ export function startPolling(): void {
           const decision = evaluateDecision({ chainId: token.chain_id, contractAddress: token.contract_address, symbol: token.symbol });
           storeAgentScores(token.chain_id, token.contract_address, decision);
           scored++;
-          console.log(`[Agent] ${token.symbol}: score=${decision.score} rec=${decision.recommendation} confidence=${decision.confidence.toFixed(2)}`);
+          logInfo('Agent评分', `${token.symbol}: score=${decision.score} rec=${decision.recommendation} confidence=${decision.confidence.toFixed(2)}`);
         } catch (e) {
-          console.error(`[Agent] 评分失败 ${token.symbol}:`, e);
+          logError('Agent评分', `评分失败 ${token.symbol}: ${e instanceof Error ? e.message : e}`);
         }
       }
       recordRun('trench', true, undefined, { scored });

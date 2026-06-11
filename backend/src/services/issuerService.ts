@@ -2,6 +2,7 @@
 // 数据源：Binance Web3 API /bapi/defi/v1/public/wallet-direct/buw/wallet/market/token/dev/created/tokens/info
 
 import { db } from '../db/database';
+import { logInfo } from './logService';
 
 const { fetch: undiciFetch, ProxyAgent } = require('undici');
 const PROXY_URL = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || '';
@@ -153,7 +154,7 @@ function storeIssuerTokens(creatorAddress: string, chainId: string, data: Issuer
     count++;
   }
 
-  console.log(`[Issuer] ${creatorAddress.substring(0, 12)}... | total: ${summary.totalCount} | migrated: ${summary.innerCount} | stored: ${count} tokens`);
+  logInfo('发行方', `${creatorAddress.substring(0, 12)}... | total: ${summary.totalCount} | migrated: ${summary.innerCount} | stored: ${count} tokens`);
 }
 
 // 采集单个发行方的历史数据
@@ -182,7 +183,7 @@ export async function fetchIssuerData(): Promise<void> {
   `) as SqliteStatement).all(threshold) as any[];
 
   if (issuers.length === 0) return;
-  console.log(`[Issuer] 需要同步 ${issuers.length} 个发行方`);
+  logInfo('发行方', `需要同步 ${issuers.length} 个发行方`);
 
   let successCount = 0;
   for (const issuer of issuers) {
@@ -190,7 +191,7 @@ export async function fetchIssuerData(): Promise<void> {
     if (ok) successCount++;
     await new Promise(resolve => setTimeout(resolve, 2000)); // 限流
   }
-  console.log(`[Issuer] 完成: ${successCount}/${issuers.length}`);
+  logInfo('发行方', `完成: ${successCount}/${issuers.length}`);
 }
 
 // 获取发行方数据供 API 返回

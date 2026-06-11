@@ -1,5 +1,6 @@
 // 系统控制模块 — 管理各模块的启停状态
 import { db } from '../db/database';
+import { logInfo } from './logService';
 
 interface SqliteStatement {
   run(...params: any[]): { changes: number };
@@ -50,7 +51,7 @@ export function initSystemControl(): void {
     updated_at TEXT DEFAULT (datetime('now'))
   )`);
 
-  console.log('[System] 系统控制模块初始化完成');
+  logInfo('系统控制', '系统控制模块初始化完成');
 }
 
 // 注册模块
@@ -76,7 +77,7 @@ export function registerModule(id: string, name: string, intervalMs: number): vo
       UPDATE system_modules SET name = ?, interval_ms = ?, updated_at = datetime('now')
       WHERE id = ?
     `).run(name, intervalMs, id);
-    console.log(`[System] 重新注册模块: ${id} (${name}) interval=${intervalMs}ms, 保留状态: running=${savedRunning}`);
+    logInfo('系统控制', `重新注册模块: ${id} (${name}) interval=${intervalMs}ms, 保留状态: running=${savedRunning}`);
   } else {
     // 首次注册：默认 running=1
     moduleStates.set(id, {
@@ -93,7 +94,7 @@ export function registerModule(id: string, name: string, intervalMs: number): vo
       INSERT INTO system_modules (id, name, running, interval_ms, success_count, fail_count)
       VALUES (?, ?, 1, ?, 0, 0)
     `).run(id, name, intervalMs);
-    console.log(`[System] 首次注册模块: ${id} (${name}) interval=${intervalMs}ms`);
+    logInfo('系统控制', `首次注册模块: ${id} (${name}) interval=${intervalMs}ms`);
   }
 }
 
@@ -177,7 +178,7 @@ export function toggleModule(id: string, running: boolean): boolean {
   db.prepare('UPDATE system_modules SET running = ?, updated_at = datetime(\'now\') WHERE id = ?')
     .run(running ? 1 : 0, id);
 
-  console.log(`[System] 模块 ${id} ${running ? '启动' : '暂停'}`);
+  logInfo('系统控制', `模块 ${id} ${running ? '启动' : '暂停'}`);
   return true;
 }
 

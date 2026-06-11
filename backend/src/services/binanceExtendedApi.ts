@@ -2,6 +2,7 @@
 // 包含：合约安全审计、代币动态信息、Smart Money 信号、社交热度、创建者钱包分析
 
 import { db } from '../db/database';
+import { logInfo, logError } from './logService';
 
 const { fetch: undiciFetch } = require('undici');
 import { getDispatcher } from './proxyService';
@@ -268,7 +269,7 @@ export function initExtendedTables(): void {
     UNIQUE(chain_id, contract_address)
   )`);
 
-  console.log('[Extended] 扩展表初始化完成');
+  logInfo('扩展数据', '扩展表初始化完成');
 }
 
 // 存储审计数据
@@ -328,13 +329,13 @@ export async function fetchBatchAuditData(): Promise<void> {
   `) as SqliteStatement).all() as any[];
 
   if (tokens.length === 0) return;
-  console.log(`[Extended] 需要采集审计数据: ${tokens.length} 个代币`);
+  logInfo('扩展数据', `需要采集审计数据: ${tokens.length} 个代币`);
 
   for (const token of tokens) {
     const data = await fetchTokenAudit(token.chain_id, token.contract_address);
     if (data) {
       storeAuditData(token.chain_id, token.contract_address, data);
-      console.log(`[Extended] ${token.symbol}: risk=${data.riskLevelEnum} buyTax=${data.buyTax} sellTax=${data.sellTax}`);
+      logInfo('扩展数据', `${token.symbol}: risk=${data.riskLevelEnum} buyTax=${data.buyTax} sellTax=${data.sellTax}`);
     }
   }
 }
@@ -350,13 +351,13 @@ export async function fetchBatchDynamicInfo(): Promise<void> {
   `) as SqliteStatement).all() as any[];
 
   if (tokens.length === 0) return;
-  console.log(`[Extended] 需要采集动态信息: ${tokens.length} 个代币`);
+  logInfo('扩展数据', `需要采集动态信息: ${tokens.length} 个代币`);
 
   for (const token of tokens) {
     const data = await fetchTokenDynamicInfo(token.chain_id, token.contract_address);
     if (data) {
       storeDynamicInfo(token.chain_id, token.contract_address, data);
-      console.log(`[Extended] ${token.symbol}: price=${data.price} smartMoney=${data.smartMoneyHolders}`);
+      logInfo('扩展数据', `${token.symbol}: price=${data.price} smartMoney=${data.smartMoneyHolders}`);
     }
   }
 }
@@ -366,7 +367,7 @@ export async function fetchBatchSmartMoneySignals(): Promise<void> {
   const signals = await fetchSmartMoneySignals('56', 20);
   if (signals.length === 0) return;
   const count = storeSmartMoneySignals(signals);
-  if (count > 0) console.log(`[Extended] 存储 ${count} 条 Smart Money 信号`);
+  if (count > 0) logInfo('扩展数据', `存储 ${count} 条 Smart Money 信号`);
 }
 
 // 统一入口：批量采集扩展数据

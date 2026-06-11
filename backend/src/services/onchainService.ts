@@ -3,6 +3,7 @@
 // 采集策略：首次入库立即采集，之后每 3 天自动同步，支持手动刷新单个代币
 
 import { db } from '../db/database';
+import { logInfo, logError } from './logService';
 import { BinanceToken } from '../types/token';
 
 const { fetch: undiciFetch, ProxyAgent } = require('undici');
@@ -145,10 +146,10 @@ export async function fetchSingleTokenOnchain(chainId: string, contractAddress: 
       params.push(chainId, contractAddress);
       (db.prepare(`UPDATE tokens SET ${updates.join(', ')}, updated_at = datetime('now') WHERE chain_id = ? AND contract_address = ?`) as SqliteStatement).run(...params);
     }
-    console.log(`[Onchain] ${symbol || contractAddress}: 已更新`);
+    logInfo('链上数据', `${symbol || contractAddress}: 已更新`);
     return true;
   } catch (err) {
-    console.error(`[Onchain] ${symbol || contractAddress} 失败:`, err);
+    logError('链上数据', `${symbol || contractAddress} 失败: ${err instanceof Error ? err.message : err}`);
     return false;
   }
 }
@@ -165,7 +166,7 @@ export async function fetchOnchainSupplyData(): Promise<void> {
   `) as SqliteStatement).all(threshold) as any[];
 
   if (tokens.length === 0) return;
-  console.log(`[Onchain] 需要同步 ${tokens.length} 个代币`);
+  logInfo('链上数据', `需要同步 ${tokens.length} 个代币`);
 
   let successCount = 0;
   for (const token of tokens) {
@@ -173,5 +174,5 @@ export async function fetchOnchainSupplyData(): Promise<void> {
     if (ok) successCount++;
     await new Promise(resolve => setTimeout(resolve, 4000)); // CoinGecko 限流
   }
-  console.log(`[Onchain] 完成: ${successCount}/${tokens.length}`);
+  logInfo('链上数据', `完成: ${successCount}/${tokens.length}`);
 }
