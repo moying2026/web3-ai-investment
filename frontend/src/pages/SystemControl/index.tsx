@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Card, Row, Col, Switch, Space, Button, Tag, Spin, message, Input } from 'antd';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Card, Row, Col, Switch, Space, Button, Tag, Spin, message, Input, Checkbox } from 'antd';
 import {
   SyncOutlined,
   RocketOutlined,
@@ -9,6 +9,7 @@ import {
   BugOutlined,
   RobotOutlined,
   LineChartOutlined,
+  FileTextOutlined,
 } from '@ant-design/icons';
 import { systemApi } from '../../services/api';
 
@@ -55,6 +56,20 @@ const SystemControl: React.FC = () => {
   const [proxyTesting, setProxyTesting] = useState(false);
   const [proxySaving, setProxySaving] = useState(false);
 
+  // 日志状态
+  interface LogEntry {
+    time: string;
+    level: string;
+    module: string;
+    message: string;
+  }
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [logLevels, setLogLevels] = useState<string[]>(['info', 'warn', 'error']);
+  const [logStreaming, setLogStreaming] = useState(false);
+  const [logExpanded, setLogExpanded] = useState(false);
+  const logEndRef = useRef<HTMLDivElement>(null);
+  const logSseRef = useRef<EventSource | null>(null);
+
   const loadStatus = useCallback(async () => {
     try {
       const data = await systemApi.getStatus();
@@ -74,6 +89,49 @@ const SystemControl: React.FC = () => {
     const timer = setInterval(loadStatus, 5000);
     return () => clearInterval(timer);
   }, []);
+
+  // 加载日志历史
+  const loadLogHistory = useCallback(async () => {
+    try {
+      const data = await systemApi.getLogHistory();
+      if (Array.isArray(data)) setLogs(data.slice(-100));
+    } catch { /* 静默 */ }
+  }, []);
+
+  // SSE 日志流控制
+  const startLogStream = useCallback(() => {
+    if (logSseRef.current) return;
+    const es = new EventSource('/api/system/logs');
+    es.onmessage = (e) => {
+      try {
+        const log = JSON.parse(e.data);
+        setLogs(prev => [...prev.slice(-199), log]); // 最多保留200条
+      } catch { /* ignore */ }
+    };
+    es.onerror = () => {
+      es.close();
+      logSseRef.current = null;
+      setLogStreaming(false);
+    };
+    logSseRef.current = es;
+    setLogStreaming(true);
+  }, []);
+
+  const stopLogStream = useCallback(() => {
+    logSseRef.current?.close();
+    logSseRef.current = null;
+    setLogStreaming(false);
+  }, []);
+
+  // 组件卸载时清理 SSE
+  useEffect(() => {
+    return () => { logSseRef.current?.close(); };
+  }, []);
+
+  // 自动滚动到底部
+  useEffect(() => {
+    logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [logs]);
 
   const handleToggle = async (moduleId: string, running: boolean) => {
     setToggling(prev => ({ ...prev, [moduleId]: true }));
@@ -308,6 +366,88 @@ const SystemControl: React.FC = () => {
               style={{ height: 20, lineHeight: '20px', fontSize: 10 }}
             />
           </div>
+        </Card>
+
+        {/* 日志输出显示区 */}
+        <Card
+          size="small"
+          style={{ marginTop: 4 }}
+          bodyStyle={{ padding: '4px 8px' }}
+          title={
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }} onClick={() => setLogExpanded(!logExpanded)}>
+              <FileTextOutlined style={{ fontSize: 12, color: '#1890ff' }} />
+              <span style={{ fontWeight: 'bold', fontSize: 12 }}>运行日志</span>
+              <Tag style={{ fontSize: 10, padding: '0 3px', margin: '0 0 0 4px' }}>{logs.length}</Tag>
+            </div>
+          }
+          extra={
+            <Space size={4}>
+              <Button
+                size="small"
+                icon={logStreaming ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
+                onClick={() => {
+                  if (logStreaming) {
+                    stopLogStream();
+                  } else {
+                    startLogStream();
+                  }
+                }}
+                style={{ fontSize: 10, height: 20, padding: '0 4px' }}
+              >
+                {logStreaming ? '停止' : '开启'}
+              </Button>
+              <Button size="small" icon={<SyncOutlined />} onClick={loadLogHistory} style={{ fontSize: 10, height: 20, padding: '0 4px' }}>刷新</Button>
+            </Space>
+          }
+        >
+          {logExpanded && (
+            <>
+              {/* 日志级别过滤 */}
+              <div style={{ marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 10, color: '#8c8c8c' }}>级别过滤:</span>
+                <Checkbox.Group
+                  value={logLevels}
+                  onChange={(v) => setLogLevels(v as string[])}
+                  options={[
+                    { label: <Tag color="blue" style={{ fontSize: 10, padding: '0 3px', margin: 0 }}>信息</Tag>, value: 'info' },
+                    { label: <Tag color="orange" style={{ fontSize: 10, padding: '0 3px', margin: 0 }}>警告</Tag>, value: 'warn' },
+                    { label: <Tag color="red" style={{ fontSize: 10, padding: '0 3px', margin: 0 }}>错误</Tag>, value: 'error' },
+                    { label: <Tag color="default" style={{ fontSize: 10, padding: '0 3px', margin: 0 }}>调试</Tag>, value: 'debug' },
+                  ]}
+                />
+              </div>
+
+              {/* 日志列表 */}
+              <div style={{
+                maxHeight: '10lh',
+                overflowY: 'auto',
+                background: '#fafafa',
+                borderRadius: 4,
+                padding: '2px 4px',
+                fontSize: 11,
+                fontFamily: 'monospace',
+                lineHeight: '1.4',
+              }}>
+                {logs.filter(l => logLevels.includes(l.level)).slice(-100).map((log, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 4, borderBottom: '1px solid #f0f0f0', padding: '1px 0' }}>
+                    <span style={{ color: '#8c8c8c', whiteSpace: 'nowrap' }}>{log.time ? new Date(log.time).toLocaleTimeString() : '--'}</span>
+                    <Tag
+                      color={log.level === 'error' ? 'red' : log.level === 'warn' ? 'orange' : log.level === 'debug' ? 'default' : 'blue'}
+                      style={{ fontSize: 10, padding: '0 2px', margin: 0, lineHeight: '16px', minWidth: 30, textAlign: 'center' }}
+                    >
+                      {log.level}
+                    </Tag>
+                    <span style={{ color: '#1890ff', minWidth: 50 }}>[{log.module}]</span>
+                    <span style={{ flex: 1, wordBreak: 'break-all' }}>{log.message}</span>
+                  </div>
+                ))}
+                {logs.length === 0 && (
+                  <div style={{ color: '#8c8c8c', textAlign: 'center', padding: 8 }}>暂无日志，点击"开启"接收实时日志流</div>
+                )}
+                <div ref={logEndRef} />
+              </div>
+            </>
+          )}
         </Card>
 
         {modules.length === 0 && !loading && (

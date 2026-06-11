@@ -134,6 +134,9 @@ export const systemApi = {
   setProxy: (enabled: boolean, address: string) =>
     api.post('/system/proxy', { enabled, address }),
   testProxy: () => api.post<any, any>('/system/proxy/test', {}).catch(() => ({ success: false, message: '测试失败' })),
+  // 日志相关
+  getLogHistory: () => api.get<any, any[]>('/system/logs/history').catch(() => []),
+  // SSE 日志流通过 EventSource 直连，不走 axios
 };
 
 export const smartMoneyApi = {
