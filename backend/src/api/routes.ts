@@ -17,6 +17,7 @@ import {
 } from '../services/tokenService';
 import { fetchKlines } from '../services/binanceApi';
 import { getProxyStatus, setProxy, testProxy } from '../services/proxyService';
+import { addLogSSEClient, getRecentLogs, getLogSSEClientCount } from '../services/logService';
 import { addSSEClient, getNewTokenBuffer, getLastPollTime, getSSEClientCount } from '../services/pollingService';
 import { ensureSimTables, placeOrder, closePosition, getPendingOrders, getTradesBySide, getPortfolioInfo, updateBudget } from '../services/simTradeService';
 
@@ -1267,6 +1268,46 @@ router.post('/system/proxy', async (req: Request, res: Response) => {
     // 设置后立即测试连通性
     const test = await testProxy();
     res.json({ code: 0, data: { ...result, test } });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// ============ 系统日志 API ============
+
+// GET /api/system/logs — SSE 实时日志流
+router.get('/system/logs', (req: Request, res: Response) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'Access-Control-Allow-Origin': '*',
+  });
+
+  // 发送连接成功事件
+  res.write(`data: ${JSON.stringify({ timestamp: new Date().toISOString(), level: 'info', module: 'system', message: '日志流连接成功' })}\n\n`);
+
+  // 心跳保活
+  const heartbeat = setInterval(() => {
+    res.write(`: heartbeat\n\n`);
+  }, 15000);
+
+  // 注册客户端
+  const removeClient = addLogSSEClient((data: string) => {
+    res.write(data);
+  });
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    removeClient();
+  });
+});
+
+// GET /api/system/logs/history — 返回最近 100 条日志
+router.get('/system/logs/history', (_req: Request, res: Response) => {
+  try {
+    const logs = getRecentLogs(100);
+    res.json({ code: 0, data: { logs, total: logs.length, sseClients: getLogSSEClientCount() } });
   } catch (err: any) {
     res.status(500).json({ code: -1, message: err.message });
   }

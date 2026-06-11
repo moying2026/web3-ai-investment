@@ -49,6 +49,8 @@ async function main(): Promise<void> {
         stats: 'GET /api/stats',
         health: 'GET /api/health',
         newTokenStream: 'GET /api/stream/new-tokens',
+        logs: 'GET /api/system/logs (SSE 实时日志流)',
+        logsHistory: 'GET /api/system/logs/history (最近100条日志)',
       },
     });
   });
