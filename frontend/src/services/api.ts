@@ -135,7 +135,7 @@ export const systemApi = {
     api.post('/system/proxy', { enabled, address }),
   testProxy: () => api.post<any, any>('/system/proxy/test', {}).catch(() => ({ success: false, message: '测试失败' })),
   // 日志相关
-  getLogHistory: () => api.get<any, any[]>('/system/logs/history').catch(() => []),
+  getLogHistory: () => api.get<any, any>('/system/logs/history').catch(() => ({ logs: [], total: 0 })),
   // SSE 日志流通过 EventSource 直连，不走 axios
 };
 

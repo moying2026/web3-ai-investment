@@ -58,7 +58,7 @@ const SystemControl: React.FC = () => {
 
   // 日志状态
   interface LogEntry {
-    time: string;
+    timestamp: string;  // ISO 8601，与后端一致
     level: string;
     module: string;
     message: string;
@@ -93,8 +93,10 @@ const SystemControl: React.FC = () => {
   // 加载日志历史
   const loadLogHistory = useCallback(async () => {
     try {
-      const data = await systemApi.getLogHistory();
-      if (Array.isArray(data)) setLogs(data.slice(-100));
+      const res = await systemApi.getLogHistory();
+      // 后端返回 {code: 0, data: {logs: [...], total, sseClients}}
+      const logs = res?.logs || (Array.isArray(res) ? res : []);
+      setLogs(logs.slice(-100));
     } catch { /* 静默 */ }
   }, []);
 
@@ -430,7 +432,7 @@ const SystemControl: React.FC = () => {
               }}>
                 {logs.filter(l => logLevels.includes(l.level)).slice(-100).map((log, i) => (
                   <div key={i} style={{ display: 'flex', gap: 4, borderBottom: '1px solid #f0f0f0', padding: '1px 0' }}>
-                    <span style={{ color: '#8c8c8c', whiteSpace: 'nowrap' }}>{log.time ? new Date(log.time).toLocaleTimeString() : '--'}</span>
+                    <span style={{ color: '#8c8c8c', whiteSpace: 'nowrap' }}>{log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : '--'}</span>
                     <Tag
                       color={log.level === 'error' ? 'red' : log.level === 'warn' ? 'orange' : log.level === 'debug' ? 'default' : 'blue'}
                       style={{ fontSize: 10, padding: '0 2px', margin: 0, lineHeight: '16px', minWidth: 30, textAlign: 'center' }}
