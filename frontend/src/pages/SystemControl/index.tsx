@@ -417,9 +417,9 @@ const SystemControl: React.FC = () => {
                 />
               </div>
 
-              {/* 日志列表 */}
+              {/* 日志列表：固定10行高度，超出滚动 */}
               <div style={{
-                maxHeight: '10lh',
+                height: 160, // 固定10行高度（约16px/行）
                 overflowY: 'auto',
                 background: '#fafafa',
                 borderRadius: 4,
