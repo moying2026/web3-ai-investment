@@ -971,7 +971,6 @@ const Dashboard: React.FC = () => {
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let pollTimer: ReturnType<typeof setInterval> | null = null;
     let closed = false;
-    let onMessageDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
     const connect = () => {
       if (closed) return;
@@ -992,15 +991,54 @@ const Dashboard: React.FC = () => {
             retryDelay = Math.min(retryDelay * 2, 30000);
           }
         };
-    // 新币推送（debounce 防抖，避免高频推送触发大量请求）
+    // 新币推送：直接插入 tokens 头部，不重新拉列表
         es.onmessage = (e) => {
           try {
-            JSON.parse(e.data);
-            if (Object.keys(filters).length === 0) {
-              if (onMessageDebounceTimer) clearTimeout(onMessageDebounceTimer);
-              onMessageDebounceTimer = setTimeout(() => {
-                loadTokens(pagination.page, pagination.pageSize, filters);
-              }, 500);
+            const msg = JSON.parse(e.data);
+            if (msg.type === 'new_token' && msg.token) {
+              // SSE 字段 camelCase → 前端 Token snake_case，补全缺失字段
+              const t = msg.token;
+              const newToken: Token = {
+                id: Date.now(), // 临时 ID，后续刷新会被真实 ID 覆盖
+                chain_id: t.chainId || '',
+                contract_address: t.contractAddress || '',
+                symbol: t.symbol || '??',
+                icon: t.icon,
+                decimals: 18,
+                price_first: t.price || '0',
+                price_latest: t.price || '0',
+                percent_change_1m: '0',
+                percent_change_5m: '0',
+                percent_change_1h: '0',
+                percent_change_4h: '0',
+                percent_change_24h: '0',
+                volume_1m: '0',
+                volume_5m: '0',
+                volume_1h: '0',
+                volume_4h: '0',
+                volume_24h: '0',
+                volume_24h_buy: '0',
+                volume_24h_sell: '0',
+                count_1m: 0,
+                count_5m: 0,
+                count_1h: 0,
+                count_4h: 0,
+                count_24h: 0,
+                unique_trader_24h: 0,
+                unique_trader_1h: 0,
+                liquidity: String(t.liquidity || '0'),
+                holders: t.holders || 0,
+                market_cap: String(t.marketCap || '0'),
+                launch_time: t.launchTime || 0,
+                created_at: msg.detectedAt || new Date().toISOString(),
+                updated_at: msg.detectedAt || new Date().toISOString(),
+              };
+              // 去重：已有相同 contract_address+chain_id 则不重复插入
+              setTokens(prev => {
+                if (prev.some(p => p.contract_address === newToken.contract_address && p.chain_id === newToken.chain_id)) return prev;
+                return [newToken, ...prev];
+              });
+              setPagination(p => ({ ...p, total: p.total + 1 }));
             }
             loadStats();
           } catch { /* ignore */ }
@@ -1044,7 +1082,6 @@ const Dashboard: React.FC = () => {
       es?.close();
       if (retryTimer) clearTimeout(retryTimer);
       if (pollTimer) clearInterval(pollTimer);
-      if (onMessageDebounceTimer) clearTimeout(onMessageDebounceTimer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
