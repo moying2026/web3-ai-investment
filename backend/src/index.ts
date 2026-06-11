@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import * as path from 'path';
 import { initDatabase } from './db/database';
 import { initKnownTokensCache } from './services/tokenService';
 import { startPolling } from './services/pollingService';
@@ -36,23 +37,13 @@ async function main(): Promise<void> {
   // API 路由
   app.use('/api', routes);
 
-  // 根路由
-  app.get('/', (_req, res) => {
-    res.json({
-      name: 'Web3 AI 投资决策系统',
-      version: '0.1.0',
-      endpoints: {
-        tokens: 'GET /api/tokens',
-        tokenDetail: 'GET /api/tokens/:chain/:address',
-        snapshots: 'GET /api/tokens/:chain/:address/snapshots',
-        socialTopics: 'GET /api/social-topics',
-        stats: 'GET /api/stats',
-        health: 'GET /api/health',
-        newTokenStream: 'GET /api/stream/new-tokens',
-        logs: 'GET /api/system/logs (SSE 实时日志流)',
-        logsHistory: 'GET /api/system/logs/history (最近100条日志)',
-      },
-    });
+  // 前端静态文件
+  const frontendDist = path.resolve(__dirname, '../../frontend/dist');
+  app.use(express.static(frontendDist));
+
+  // SPA 兜底：非 API 路由一律返回 index.html
+  app.get('*', (_req, res) => {
+    res.sendFile(path.join(frontendDist, 'index.html'));
   });
 
   app.listen(PORT, () => {
