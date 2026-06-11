@@ -98,6 +98,7 @@ router.get('/tokens/:chain/:address', (req: Request, res: Response) => {
       alpha_info: safeJsonParse(token.alpha_info),
       meta_info: safeJsonParse(token.meta_info),
     };
+    logInfo('API', `代币详情: ${chain}/${address} symbol=${token.symbol}`);
     res.json({ code: 0, data: parsed });
   } catch (err: any) {
     res.status(500).json({ code: -1, message: err.message });
