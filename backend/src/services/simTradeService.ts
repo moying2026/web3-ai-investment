@@ -147,6 +147,30 @@ function releaseBudget(amount: number): void {
   db.prepare("UPDATE portfolio_state SET used_budget = MAX(0, used_budget - ?), available_budget = available_budget + ?, updated_at = ? WHERE portfolio_id = 'main'").run(amount, amount, Date.now());
 }
 
+/**
+ * 预算对账：根据实际未平仓订单重新计算 used_budget / available_budget / position_count
+ * 用于修复批量平仓后预算未正确回收的问题
+ */
+export function reconcileBudget(): { used_budget: number; available_budget: number; position_count: number } {
+  ensureSimTables();
+  const p = getPortfolio();
+  if (!p) return { used_budget: 0, available_budget: 0, position_count: 0 };
+
+  const actual = (db.prepare(
+    "SELECT COALESCE(SUM(from_amount), 0) as used, COUNT(*) as cnt FROM sim_trades WHERE side = 'BUY' AND status = 'SUCCESS'"
+  ) as SqliteStatement).get() as any;
+
+  const usedBudget = actual.used;
+  const availableBudget = p.total_budget - usedBudget;
+
+  db.prepare(
+    'UPDATE portfolio_state SET used_budget = ?, available_budget = ?, position_count = ?, updated_at = ? WHERE portfolio_id = \'main\''
+  ).run(usedBudget, availableBudget, actual.cnt, Date.now());
+
+  logInfo('模拟交易', `预算对账: used=$${usedBudget} available=$${availableBudget} positions=${actual.cnt}`);
+  return { used_budget: usedBudget, available_budget: availableBudget, position_count: actual.cnt };
+}
+
 export function getPortfolioInfo(): any {
   ensureSimTables();
   const p = getPortfolio();

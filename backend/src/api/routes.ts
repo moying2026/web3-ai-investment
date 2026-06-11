@@ -19,7 +19,7 @@ import { fetchKlines } from '../services/binanceApi';
 import { getProxyStatus, setProxy, testProxy } from '../services/proxyService';
 import { addLogSSEClient, getRecentLogs, getLogSSEClientCount, logInfo, logWarn, logError } from '../services/logService';
 import { addSSEClient, getNewTokenBuffer, getLastPollTime, getSSEClientCount } from '../services/pollingService';
-import { ensureSimTables, placeOrder, closePosition, getPendingOrders, getTradesBySide, getPortfolioInfo, updateBudget } from '../services/simTradeService';
+import { ensureSimTables, placeOrder, closePosition, getPendingOrders, getTradesBySide, getPortfolioInfo, updateBudget, reconcileBudget } from '../services/simTradeService';
 
 const router = Router();
 
@@ -524,6 +524,17 @@ router.put('/sim/portfolio', (req: Request, res: Response) => {
     ensureSimTables();
     const { total_budget, max_per_trade_amount, max_positions, max_chain_pct } = req.body;
     const result = updateBudget({ total_budget, max_per_trade_amount, max_positions, max_chain_pct });
+    res.json({ code: 0, data: result });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// POST /api/sim/portfolio/reconcile — 预算对账（修复批量平仓后预算未回收）
+router.post('/sim/portfolio/reconcile', (_req: Request, res: Response) => {
+  try {
+    const result = reconcileBudget();
+    logInfo('模拟交易', `预算对账API: used=$${result.used_budget} available=$${result.available_budget}`);
     res.json({ code: 0, data: result });
   } catch (err: any) {
     res.status(500).json({ code: -1, message: err.message });

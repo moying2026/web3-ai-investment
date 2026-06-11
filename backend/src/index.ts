@@ -4,6 +4,7 @@ import * as path from 'path';
 import { initDatabase } from './db/database';
 import { initKnownTokensCache } from './services/tokenService';
 import { startPolling } from './services/pollingService';
+import { reconcileBudget } from './services/simTradeService';
 import routes from './api/routes';
 
 const PORT = parseInt(process.env.PORT || '3500', 10);
@@ -21,6 +22,9 @@ async function main(): Promise<void> {
   // 2. 加载已知代币缓存
   console.log('[2/4] 加载已知代币缓存...');
   initKnownTokensCache();
+
+  // 2.5 预算对账（修复批量平仓后预算未回收）
+  reconcileBudget();
 
   // 3. 启动 Express 服务
   console.log('[3/4] 启动 API 服务...');
