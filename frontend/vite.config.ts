@@ -9,7 +9,7 @@ export default defineConfig({
     proxy: {
       // SSE 流式端点需要单独配置（放在 /api 前面优先匹配）
       '/api/stream': {
-        target: 'http://localhost:3499',
+        target: 'http://localhost:3500',
         changeOrigin: true,
         // SSE 必须关闭缓冲
         configure: (proxy) => {
@@ -24,7 +24,7 @@ export default defineConfig({
         },
       },
       '/api': {
-        target: 'http://localhost:3499',
+        target: 'http://localhost:3500',
         changeOrigin: true,
       },
     },
