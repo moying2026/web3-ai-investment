@@ -17,7 +17,7 @@ import {
 import ReactECharts from 'echarts-for-react';
 import type { Token, Stats } from '../../types';
 import api, { tokenApi, statsApi, simApi, auditApi, dynamicApi, tokenAnalyzerApi, issuerRiskApi, createNewTokenSSE } from '../../services/api';
-import { formatPrice, formatVolume, formatSupply, formatPercent } from '../../utils/format';
+import { formatPrice, formatPriceRaw, formatVolume, formatSupply, formatPercent } from '../../utils/format';
 import AIDiscussionPanel from '../../components/AIDiscussionPanel';
 import SystemControl from '../SystemControl';
 
@@ -456,13 +456,7 @@ const TokenQuickView: React.FC<{ chain: string; address: string }> = ({ chain, a
     xAxis: { type: 'category' as const, data: timeLabels, axisLabel: { fontSize: 10 } },
     yAxis: {
       type: 'value' as const, scale: true,
-      axisLabel: { formatter: (v: number) => {
-        if (v === 0) return '0';
-        if (Math.abs(v) < 1) { const s = Math.abs(v).toFixed(20).replace(/0+$/, ''); return v.toFixed(Math.min(18, Math.max(8, (s.split('.')[1] || '').length))); }
-        if (v >= 1e6) return `${(v / 1e6).toFixed(1)}M`;
-        if (v >= 1e3) return `${(v / 1e3).toFixed(0)}K`;
-        return v.toFixed(2);
-      } },
+      axisLabel: { formatter: (v: number) => formatPriceRaw(v) },
     },
     dataZoom: [{ type: 'inside' as const, start: 0, end: 100 }, { type: 'slider' as const, start: 0, end: 100, height: 20, bottom: 5 }],
     series: [{
@@ -824,13 +818,7 @@ const Dashboard: React.FC = () => {
     xAxis: { type: 'category' as const, data: klineTimeLabels, axisLabel: { fontSize: 10 } },
     yAxis: {
       type: 'value' as const, scale: true,
-      axisLabel: { formatter: (v: number) => {
-        if (v === 0) return '0';
-        if (Math.abs(v) < 1) { const s = Math.abs(v).toFixed(20).replace(/0+$/, ''); return v.toFixed(Math.min(18, Math.max(8, (s.split('.')[1] || '').length))); }
-        if (v >= 1e6) return `${(v / 1e6).toFixed(1)}M`;
-        if (v >= 1e3) return `${(v / 1e3).toFixed(0)}K`;
-        return v.toFixed(2);
-      } },
+      axisLabel: { formatter: (v: number) => formatPriceRaw(v) },
     },
     dataZoom: [{ type: 'inside' as const, start: 0, end: 100 }, { type: 'slider' as const, start: 0, end: 100, height: 20, bottom: 5 }],
     series: [{

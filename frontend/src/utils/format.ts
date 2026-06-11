@@ -63,8 +63,38 @@ export function formatNumber(
 }
 
 /**
+ * 格式化价格（不带 $ 前缀，供 K 线图等使用）
+ * 小价格用下标格式（如 0.0₈80）
+ * 大价格用 K/M 缩写
+ */
+export function formatPriceRaw(value: number): string {
+  if (value === 0) return '0';
+  if (Math.abs(value) >= 1e6) return `${(value / 1e6).toFixed(1)}M`;
+  if (Math.abs(value) >= 1e3) return `${(value / 1e3).toFixed(0)}K`;
+  if (Math.abs(value) >= 1) return value.toFixed(2);
+  // 小价格用下标格式
+  const absStr = Math.abs(value).toFixed(20);
+  const decPart = absStr.split('.')[1] || '';
+  let firstNonZero = -1;
+  for (let i = 0; i < decPart.length; i++) {
+    if (decPart[i] !== '0') { firstNonZero = i; break; }
+  }
+  if (firstNonZero === -1) return '0';
+  const SUBSCRIPT_DIGITS = ['₀', '₁', '₂', '₃', '₄', '₅', '₆', '₇', '₈', '₉'];
+  if (firstNonZero >= 3) {
+    const afterZeros = decPart.slice(firstNonZero, firstNonZero + 4).replace(/0+$/, '') || decPart.slice(firstNonZero, firstNonZero + 1);
+    const subscript = String(firstNonZero).split('').map(d => SUBSCRIPT_DIGITS[parseInt(d)]).join('');
+    const sign = value < 0 ? '-' : '';
+    return `${sign}0.0${subscript}${afterZeros}`;
+  }
+  const keepDecimals = Math.min(18, Math.max(8, firstNonZero + 4));
+  return Math.abs(value).toFixed(keepDecimals).replace(/0+$/, '');
+}
+
+/**
  * 格式化价格（带 $ 前缀）
  * 小价格保留到第一个有效数字（如 $0.00001234）
+ * 连续0超过3个时用下标格式（如 $0.0₈80 表示 $0.0000000080）
  * 大价格千分位 + 2 位小数（如 $1,234,567.89）
  */
 export function formatPrice(value: string | number | null | undefined): string {
@@ -152,6 +182,17 @@ function formatSmallNumber(num: number): string {
   }
 
   if (firstNonZero === -1) return '0';
+
+  // 连续0超过3个时，用下标格式：0.0ₙxxx
+  const SUBSCRIPT_DIGITS = ['₀', '₁', '₂', '₃', '₄', '₅', '₆', '₇', '₈', '₉'];
+  if (firstNonZero >= 3) {
+    // 取第一个有效数字后的4位有效数字
+    const afterZeros = decPart.slice(firstNonZero, firstNonZero + 4).replace(/0+$/, '') || decPart.slice(firstNonZero, firstNonZero + 1);
+    // 把 firstNonZero 转为下标字符串
+    const subscript = String(firstNonZero).split('').map(d => SUBSCRIPT_DIGITS[parseInt(d)]).join('');
+    const sign = num < 0 ? '-' : '';
+    return `${sign}0.0${subscript}${afterZeros}`;
+  }
 
   // 保留到第一个有效数字后 4 位（至少 8 位小数，最多 18 位）
   const keepDecimals = Math.min(18, Math.max(8, firstNonZero + 4));
