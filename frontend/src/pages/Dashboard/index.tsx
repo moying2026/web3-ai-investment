@@ -849,6 +849,16 @@ const Dashboard: React.FC = () => {
     } catch { /* 静默 */ }
   }, []);
 
+  // 错误提示去重：记录上次错误提示时间，避免短时间内重复弹出
+  const lastErrorTimeRef = useRef<number>(0);
+  const showErrorDedup = useCallback((msg: string, intervalMs = 3000) => {
+    const now = Date.now();
+    if (now - lastErrorTimeRef.current > intervalMs) {
+      lastErrorTimeRef.current = now;
+      message.error(msg);
+    }
+  }, []);
+
   // 加载代币列表（带筛选+排序）
   const loadTokens = useCallback(async (page = 1, pageSize = 20, filterParams?: FilterParams, sortBy?: string, sortOrd?: string) => {
     setLoading(true);
@@ -863,11 +873,11 @@ const Dashboard: React.FC = () => {
       setTokens(data?.data || []);
       setPagination({ page, pageSize, total: data?.total || 0 });
     } catch {
-      message.error('加载代币列表失败');
+      showErrorDedup('加载代币列表失败');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showErrorDedup]);
 
   // 排序字段映射：前端列key → 后端sortBy
   const SORT_FIELD_MAP: Record<string, string> = {
@@ -961,6 +971,7 @@ const Dashboard: React.FC = () => {
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let pollTimer: ReturnType<typeof setInterval> | null = null;
     let closed = false;
+    let onMessageDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
     const connect = () => {
       if (closed) return;
@@ -981,12 +992,15 @@ const Dashboard: React.FC = () => {
             retryDelay = Math.min(retryDelay * 2, 30000);
           }
         };
-        // 新币推送（原有逻辑）
+    // 新币推送（debounce 防抖，避免高频推送触发大量请求）
         es.onmessage = (e) => {
           try {
             JSON.parse(e.data);
             if (Object.keys(filters).length === 0) {
-              loadTokens(pagination.page, pagination.pageSize, filters);
+              if (onMessageDebounceTimer) clearTimeout(onMessageDebounceTimer);
+              onMessageDebounceTimer = setTimeout(() => {
+                loadTokens(pagination.page, pagination.pageSize, filters);
+              }, 500);
             }
             loadStats();
           } catch { /* ignore */ }
@@ -1030,6 +1044,7 @@ const Dashboard: React.FC = () => {
       es?.close();
       if (retryTimer) clearTimeout(retryTimer);
       if (pollTimer) clearInterval(pollTimer);
+      if (onMessageDebounceTimer) clearTimeout(onMessageDebounceTimer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
