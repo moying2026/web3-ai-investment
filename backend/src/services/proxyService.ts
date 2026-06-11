@@ -1,5 +1,6 @@
 // 代理管理服务 — 运行时动态切换代理，无需重启进程
 import { db } from '../db/database';
+import { logInfo } from './logService';
 
 const { fetch: undiciFetch, ProxyAgent } = require('undici');
 
@@ -66,10 +67,10 @@ export function setProxy(address: string, enabled: boolean): {
     // 动态切换 dispatcher
     if (enabled && address) {
       currentDispatcher = new ProxyAgent(address);
-      console.log(`[Proxy] 已启用代理: ${address}`);
+      logInfo('代理检测', `已启用代理: ${address}`);
     } else {
       currentDispatcher = undefined;
-      console.log(`[Proxy] 已禁用代理`);
+      logInfo('代理检测', '已禁用代理');
     }
 
     return { success: true, message: `代理已${enabled ? '启用' : '禁用'}: ${address}` };
@@ -116,4 +117,4 @@ export async function testProxy(): Promise<{
 
 // 初始化
 initProxyTable();
-console.log(`[Proxy] 初始化: ${proxyEnabled ? '启用' : '禁用'} ${currentProxyUrl || '(无)'}`);
+logInfo('代理检测', `初始化: ${proxyEnabled ? '启用' : '禁用'} ${currentProxyUrl || '(无)'}`);

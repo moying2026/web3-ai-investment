@@ -3,6 +3,7 @@
 import { db } from '../db/database';
 import { AnalysisResult } from './aiAnalysisService';
 import { v4 as uuidv4 } from 'uuid';
+import { logInfo, logWarn, logError } from './logService';
 
 interface SqliteStatement {
   run(...params: any[]): { changes: number };
@@ -222,7 +223,7 @@ export function placeOrder(params: PlaceOrderParams): any {
   if (params.side === 'BUY') {
     const budgetCheck = checkBudget(fromAmount, params.chain_id);
     if (!budgetCheck.ok) {
-      console.log(`[Swap] SKIP ${params.symbol}: ${budgetCheck.reason}`);
+      logWarn('模拟交易', `SKIP ${params.symbol}: ${budgetCheck.reason}`);
       return { success: false, reason: budgetCheck.reason };
     }
   }
@@ -253,7 +254,7 @@ export function placeOrder(params: PlaceOrderParams): any {
       db.prepare("UPDATE portfolio_state SET total_trades = total_trades + 1, position_count = position_count + 1, last_trade_at = ? WHERE portfolio_id = 'main'").run(now);
     }
 
-    console.log(`[Swap] ${params.side}: ${params.symbol} | ${fromAmount} ${params.from_token || paymentToken} → ${toAmount} ${params.to_token || params.symbol}`);
+    logInfo('模拟交易', `${params.side}: ${params.symbol} | ${fromAmount} ${params.from_token || paymentToken} → ${toAmount} ${params.to_token || params.symbol}`);
     return { success: true, trade_id: tradeId, status: 'SUCCESS', is_simulated: 1 };
   } else {
     // 实盘：记录为 PENDING，等待链上 txHash 回调
@@ -375,7 +376,7 @@ function executePendingOrder(order: any, currentPrice: number): void {
   // 3. 更新 portfolio 统计
   const isWin = pnl > 0;
   (db.prepare(`UPDATE portfolio_state SET winning_trades = winning_trades + ?, losing_trades = losing_trades + ?, total_pnl = CAST(total_pnl AS REAL) + ?, position_count = MAX(0, position_count - 1), updated_at = ? WHERE portfolio_id = 'main'`)).run(isWin ? 1 : 0, isWin ? 0 : 1, pnl, now);
-  console.log(`[Swap] SELL ${order.order_type}: ${order.symbol} | ${sellQty} → ${sellToAmount.toFixed(4)} | PnL: $${pnl.toFixed(2)} (${pnlPct.toFixed(2)}%)`);
+  logInfo('模拟交易', `SELL ${order.order_type}: ${order.symbol} | ${sellQty} → ${sellToAmount.toFixed(4)} | PnL: $${pnl.toFixed(2)} (${pnlPct.toFixed(2)}%)`);
 }
 
 // ==================== 手动平仓 ====================
@@ -452,7 +453,7 @@ export function closePosition(trade: any, exitPrice: number, exitReason: string)
   const isWin = pnl > 0;
   (db.prepare(`UPDATE portfolio_state SET winning_trades = winning_trades + ?, losing_trades = losing_trades + ?, total_pnl = CAST(total_pnl AS REAL) + ?, position_count = MAX(0, position_count - 1), updated_at = ? WHERE portfolio_id = 'main'`)).run(isWin ? 1 : 0, isWin ? 0 : 1, pnl, now);
 
-  console.log(`[Swap] SELL(close): ${trade.symbol} | ${sellFromAmount} ${trade.to_token} → ${sellToAmount.toFixed(4)} ${trade.from_token} | PnL: $${pnl.toFixed(2)} (${pnlPct.toFixed(2)}%)`);
+  logInfo('模拟交易', `SELL(close): ${trade.symbol} | ${sellFromAmount} ${trade.to_token} → ${sellToAmount.toFixed(4)} ${trade.from_token} | PnL: $${pnl.toFixed(2)} (${pnlPct.toFixed(2)}%)`);
   return {
     success: true,
     trade_id: sellTradeId,

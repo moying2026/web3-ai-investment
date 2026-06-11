@@ -12,6 +12,7 @@ import {
   upsertSocialTopics
 } from './tokenService';
 import { BinanceToken, TokenListData } from '../types/token';
+import { logInfo, logWarn, logError } from './logService';
 
 // SSE 事件队列
 const sseClients: Set<(data: string) => void> = new Set();
@@ -58,10 +59,10 @@ export async function pollTokenData(): Promise<void> {
         for (let page = 1; page <= 3; page++) {
           const data = await fetchMemeRushList(chain.chainId, 200, page);
           memeRushResults.push(data);
-          console.log(`[API] ${chain.name} (Meme Rush p${page}): 获取 ${data.tokens.length} 个代币, total=${data.total}`);
+          logInfo('数据采集', `${chain.name} (Meme Rush p${page}): 获取 ${data.tokens.length} 个代币, total=${data.total}`);
         }
       } catch (err) {
-        console.error(`[API] ${chain.name} (Meme Rush) 获取失败:`, err instanceof Error ? err.message : err);
+        logError('数据采集', `${chain.name} (Meme Rush) 获取失败: ${err instanceof Error ? err.message : err}`);
       }
     }
 
@@ -122,10 +123,10 @@ export async function pollTokenData(): Promise<void> {
     pollCount++;
 
     if (newCount > 0 || pollCount % 10 === 0) {
-      console.log(`[Poll] #${pollCount} | 新币: ${newCount} | 更新: ${updatedCount} | 时间: ${lastPollTime}`);
+      logInfo('数据采集', `轮询 #${pollCount} | 新币: ${newCount} | 更新: ${updatedCount} | 时间: ${lastPollTime}`);
     }
   } catch (err) {
-    console.error('[Poll] 代币采集失败:', err);
+    logError('数据采集', `代币采集失败: ${err instanceof Error ? err.message : err}`);
   }
 }
 
@@ -193,20 +194,20 @@ export async function pollLatestTokens(): Promise<void> {
         }
 
         if (chainNew > 0 || discoveryPollCount % 5 === 0) {
-          console.log(`[Discovery] ${chain.name}: 发现 ${chainNew} 个新币, total=${data.total}`);
+          logInfo('新币发现', `${chain.name}: 发现 ${chainNew} 个新币, total=${data.total}`);
         }
       } catch (err) {
-        console.error(`[Discovery] ${chain.name} 获取失败:`, err instanceof Error ? err.message : err);
+        logError('新币发现', `${chain.name} 获取失败: ${err instanceof Error ? err.message : err}`);
       }
     }
 
     discoveryPollCount++;
 
     if (totalNew > 0 || discoveryPollCount % 10 === 0) {
-      console.log(`[Discovery] #${discoveryPollCount} | 新币: ${totalNew} | 更新: ${totalUpdated}`);
+      logInfo('新币发现', `轮询 #${discoveryPollCount} | 新币: ${totalNew} | 更新: ${totalUpdated}`);
     }
   } catch (err) {
-    console.error('[Discovery] 新币发现失败:', err);
+    logError('新币发现', `新币发现失败: ${err instanceof Error ? err.message : err}`);
   }
 }
 
@@ -216,10 +217,10 @@ export async function pollSocialTopics(): Promise<void> {
     const topics = await fetchSocialTopics('56');
     const count = upsertSocialTopics(topics);
     if (count > 0) {
-      console.log(`[Social] 更新 ${count} 个社交话题`);
+      logInfo('社交话题', `更新 ${count} 个社交话题`);
     }
   } catch (err) {
-    console.error('[Social] 社交话题采集失败:', err);
+    logError('社交话题', `社交话题采集失败: ${err instanceof Error ? err.message : err}`);
   }
 }
 
@@ -229,7 +230,7 @@ export async function checkAndExecuteSnapshots(): Promise<void> {
     const plans = getPendingSnapshotPlans();
     if (plans.length === 0) return;
 
-    console.log(`[Snapshot] 发现 ${plans.length} 个待执行快照`);
+    logInfo('快照', `发现 ${plans.length} 个待执行快照`);
 
     for (const plan of plans) {
       try {
@@ -281,7 +282,7 @@ export async function checkAndExecuteSnapshots(): Promise<void> {
         executeSnapshot(plan, tokenData);
         console.log(`[Snapshot] ${plan.snapshot_type} 快照完成: ${plan.chain_id}:${plan.contract_address}`);
       } catch (err) {
-        console.error(`[Snapshot] 快照执行失败 ${plan.snapshot_type}:`, err);
+        logError('快照', `快照执行失败 ${plan.snapshot_type}: ${err instanceof Error ? err.message : err}`);
         executeSnapshot(plan, null);
       }
     }

@@ -1,6 +1,7 @@
 // AI 分析引擎 — 综合多维度评分，给出 BUY/HOLD/AVOID 建议
 
 import { db } from '../db/database';
+import { logInfo, logError } from './logService';
 
 interface SqliteStatement {
   run(...params: any[]): { changes: number };
@@ -41,7 +42,7 @@ export function initAnalysisTable(): void {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_analysis_token ON ai_analysis(chain_id, contract_address)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_analysis_score ON ai_analysis(score)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_analysis_time ON ai_analysis(analyzed_at)`);
-  console.log('[AI] ai_analysis 表初始化完成');
+  logInfo('AI评估', 'ai_analysis 表初始化完成');
 }
 
 // 分析单个代币
@@ -218,7 +219,7 @@ export function analyzeNewTokens(): AnalysisResult[] {
 
   if (tokens.length === 0) return [];
 
-  console.log(`[AI] 分析 ${tokens.length} 个新币`);
+  logInfo('AI评估', `分析 ${tokens.length} 个新币`);
   const results: AnalysisResult[] = [];
 
   for (const token of tokens) {
@@ -226,7 +227,7 @@ export function analyzeNewTokens(): AnalysisResult[] {
     if (result) {
       storeAnalysis(result);
       results.push(result);
-      console.log(`[AI] ${result.symbol}: score=${result.score} rec=${result.recommendation} reasons=[${result.reasons.slice(0, 2).join(', ')}]`);
+      logInfo('AI评估', `${result.symbol}: score=${result.score} rec=${result.recommendation} reasons=[${result.reasons.slice(0, 2).join(', ')}]`);
     }
   }
 
