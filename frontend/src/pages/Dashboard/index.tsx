@@ -291,6 +291,7 @@ const TokenQuickView: React.FC<{ chain: string; address: string }> = ({ chain, a
   const [dynamicData, setDynamicData] = useState<any>(null);
   const [similarData, setSimilarData] = useState<any>(null);
   const [addressRisk, setAddressRisk] = useState<any>(null);
+  const [position, setPosition] = useState<any>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -313,13 +314,19 @@ const TokenQuickView: React.FC<{ chain: string; address: string }> = ({ chain, a
       dynamicApi.get(chain, address).catch(() => null),
       tokenAnalyzerApi.getSimilar(chain, address).catch(() => null),
       tokenAnalyzerApi.getAddressRisk(chain, address).catch(() => null),
-    ]).then(([tokenData, snapData, audit, dynamic, similar, addrRisk]) => {
+      simApi.getOpenPositions().catch(() => null),
+    ]).then(([tokenData, snapData, audit, dynamic, similar, addrRisk, posRes]) => {
       if (tokenData) setToken(tokenData as any);
       setSnapshots((snapData as any) || []);
       setAuditData(audit);
       setDynamicData(dynamic);
       setSimilarData(similar);
       setAddressRisk(addrRisk);
+      // 匹配当前代币的持仓
+      const posData = (posRes as any)?.data?.data || (posRes as any)?.data;
+      const positions = posData?.positions || [];
+      const matched = positions.find((p: any) => p.chain_id === chain && p.contract_address === address);
+      setPosition(matched || null);
       setLastUpdated(new Date());
     }).finally(() => setLoading(false));
   }, [chain, address]);
@@ -538,6 +545,36 @@ const TokenQuickView: React.FC<{ chain: string; address: string }> = ({ chain, a
           </Col>
         </Row>
       </Card>
+
+      {/* 持仓状态 */}
+      {position && (
+        <Card size="small" style={{ marginBottom: 8, borderLeft: '3px solid #1890ff' }} bodyStyle={{ padding: '6px 10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <span style={{ fontWeight: 'bold', fontSize: 12, color: '#1890ff' }}>📦 持仓中</span>
+            <span style={{ fontSize: 11 }}>
+              买入价: <span style={{ fontFamily: 'monospace' }}>{formatPrice(position.entry_price)}</span>
+            </span>
+            <span style={{ fontSize: 11 }}>
+              当前价: <span style={{ fontFamily: 'monospace' }}>{formatPrice(position.current_price)}</span>
+            </span>
+            <span style={{ fontSize: 11 }}>
+              投入: <span style={{ fontWeight: 'bold' }}>${position.buy_amount?.toFixed(2)}</span>
+            </span>
+            <span style={{ fontSize: 11 }}>
+              当前值: <span style={{ fontWeight: 'bold' }}>${position.current_value?.toFixed(2)}</span>
+            </span>
+            <span style={{ fontSize: 12, fontWeight: 'bold', color: position.unrealized_pnl >= 0 ? '#52c41a' : '#ff4d4f' }}>
+              盈亏: {position.unrealized_pnl >= 0 ? '+' : ''}{position.unrealized_pnl?.toFixed(2)} ({formatPercent(position.unrealized_pnl_percent)})
+            </span>
+            <span style={{ fontSize: 11, color: '#ff4d4f' }}>
+              止损: {formatPrice(position.stop_loss_price)} ({position.stop_loss_percent ?? -20}%)
+            </span>
+            <span style={{ fontSize: 11, color: '#52c41a' }}>
+              止盈: {formatPrice(position.take_profit_price)} (+{position.take_profit_percent ?? 50}%)
+            </span>
+          </div>
+        </Card>
+      )}
 
       {/* K线图 */}
       <Card
