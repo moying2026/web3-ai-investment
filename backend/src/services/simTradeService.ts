@@ -13,8 +13,6 @@ interface SqliteStatement {
 
 const DEFAULT_BUY_AMOUNT = 100;
 const BUY_AMOUNT_MAP: Record<string, number> = { 'BUY': 100, 'HOLD': 50, 'AVOID': 10 };
-const DEFAULT_STOP_LOSS = -20;
-const DEFAULT_TAKE_PROFIT = 50;
 
 const CHAIN_PAYMENT_TOKEN: Record<string, string> = {
   'bsc': 'BNB', '56': 'BNB', 'solana': 'SOL', 'CT_501': 'SOL',
@@ -187,21 +185,29 @@ export interface SimSettings {
   auto_mode: string;  // 'manual' | 'auto'
 }
 
+// 系统默认值（唯一来源，sim_settings 表无记录时自动写入）
 const SETTINGS_DEFAULTS: SimSettings = {
-  stop_loss_percent: DEFAULT_STOP_LOSS,
-  take_profit_percent: DEFAULT_TAKE_PROFIT,
+  stop_loss_percent: -20,
+  take_profit_percent: 50,
   auto_mode: 'manual',
 };
 
 /**
- * 获取用户设置的止盈止损阈值
- * 优先从 sim_settings 表读取，无则返回系统默认值
+ * 获取用户设置
+ * sim_settings 表无记录时自动插入默认值，不再硬编码 fallback
  */
 export function getSimSettings(): SimSettings {
   ensureSimTables();
   const sl = (db.prepare("SELECT value FROM sim_settings WHERE key = 'stop_loss_percent'") as SqliteStatement).get() as any;
   const tp = (db.prepare("SELECT value FROM sim_settings WHERE key = 'take_profit_percent'") as SqliteStatement).get() as any;
   const am = (db.prepare("SELECT value FROM sim_settings WHERE key = 'auto_mode'") as SqliteStatement).get() as any;
+
+  // 表无记录时自动写入默认值
+  const now = Date.now();
+  if (!sl) db.prepare("INSERT INTO sim_settings (key, value, updated_at) VALUES ('stop_loss_percent', ?, ?) ON CONFLICT(key) DO NOTHING").run(SETTINGS_DEFAULTS.stop_loss_percent.toString(), now);
+  if (!tp) db.prepare("INSERT INTO sim_settings (key, value, updated_at) VALUES ('take_profit_percent', ?, ?) ON CONFLICT(key) DO NOTHING").run(SETTINGS_DEFAULTS.take_profit_percent.toString(), now);
+  if (!am) db.prepare("INSERT INTO sim_settings (key, value, updated_at) VALUES ('auto_mode', ?, ?) ON CONFLICT(key) DO NOTHING").run(SETTINGS_DEFAULTS.auto_mode, now);
+
   return {
     stop_loss_percent: sl ? parseFloat(sl.value) : SETTINGS_DEFAULTS.stop_loss_percent,
     take_profit_percent: tp ? parseFloat(tp.value) : SETTINGS_DEFAULTS.take_profit_percent,
@@ -374,8 +380,9 @@ function createPendingSellOrders(buyTradeId: string, chainId: string, contractAd
   if (!quantity || parseFloat(quantity) <= 0) return;
   const halfQty = (parseFloat(quantity) / 2).toString();
   const now = Date.now();
-  const sl = slPct ?? DEFAULT_STOP_LOSS;
-  const tp = tpPct ?? DEFAULT_TAKE_PROFIT;
+  const settings = getSimSettings();
+  const sl = slPct ?? settings.stop_loss_percent;
+  const tp = tpPct ?? settings.take_profit_percent;
   const slPrice = entryPrice * (1 + sl / 100);
   const tpPrice = entryPrice * (1 + tp / 100);
 

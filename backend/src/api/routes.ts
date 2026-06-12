@@ -20,6 +20,7 @@ import { getProxyStatus, setProxy, testProxy } from '../services/proxyService';
 import { addLogSSEClient, getRecentLogs, getLogSSEClientCount, logInfo, logWarn, logError } from '../services/logService';
 import { addSSEClient, getNewTokenBuffer, getLastPollTime, getSSEClientCount } from '../services/pollingService';
 import { ensureSimTables, placeOrder, closePosition, getPendingOrders, getTradesBySide, getPortfolioInfo, updateBudget, reconcileBudget, getOpenPositions, getSimSettings, updateSimSettings } from '../services/simTradeService';
+import { fetchSingleSolTokenData, fetchAllSolTokenData, fetchAllSolAudits } from '../services/solanaDataService';
 
 const router = Router();
 
@@ -1404,6 +1405,60 @@ router.post('/system/proxy/test', async (_req: Request, res: Response) => {
     const elapsed = Date.now() - startTime;
     logInfo('代理检测', `连通性测试: ${result.success ? '成功' : '失败'}, 耗时 ${elapsed}ms`);
     res.json({ code: 0, data: result });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// ============ SOL链数据 API ============
+
+// GET /api/sol/token/:address — 获取单个SOL代币的DexScreener+RugCheck数据
+router.get('/sol/token/:address', async (req: Request, res: Response) => {
+  try {
+    const address = String(req.params.address);
+    const result = await fetchSingleSolTokenData(address);
+    logInfo('SOL数据', `单代币查询: ${address}`);
+    res.json({
+      code: 0,
+      data: {
+        dex: result.dexData ? {
+          price_usd: result.dexData.priceUsd,
+          volume_24h: result.dexData.volume?.h24,
+          price_change_24h: result.dexData.priceChange?.h24,
+          price_change_1h: result.dexData.priceChange?.h1,
+          liquidity: result.dexData.liquidity?.usd,
+          market_cap: result.dexData.marketCap || result.dexData.fdv,
+          txns_24h: result.dexData.txns?.h24,
+          dex: result.dexData.dexId,
+          pair_address: result.dexData.pairAddress,
+        } : null,
+        audit: result.audit ? {
+          score: result.audit.score,
+          score_normalised: result.audit.score_normalised,
+          risks: result.audit.risks,
+          lp_locked_pct: result.audit.lpLockedPct,
+          token_program: result.audit.tokenProgram,
+        } : null,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// POST /api/sol/refresh-all — 手动触发全量SOL数据采集
+router.post('/sol/refresh-all', async (_req: Request, res: Response) => {
+  try {
+    const dexResult = await fetchAllSolTokenData();
+    const auditResult = await fetchAllSolAudits();
+    logInfo('SOL数据', `手动全量采集: dex=${dexResult.updated} audit=${auditResult.audited}`);
+    res.json({
+      code: 0,
+      data: {
+        dex: dexResult,
+        audit: auditResult,
+      },
+    });
   } catch (err: any) {
     res.status(500).json({ code: -1, message: err.message });
   }

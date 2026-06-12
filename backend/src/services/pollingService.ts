@@ -4,6 +4,7 @@ import { fetchIssuerData } from './issuerService';
 import { initExtendedTables, fetchExtendedData } from './binanceExtendedApi';
 import { initAnalysisTable, analyzeNewTokens } from './aiAnalysisService';
 import { executeAutoBuyAll, checkAndClosePositions } from './simTradeService';
+import { fetchAllSolTokenData, fetchAllSolAudits } from './solanaDataService';
 import { db } from '../db/database';
 import { registerModule, isModuleRunning, recordRun, initSystemControl, setModuleIntervalId, registerModuleStarter } from './systemControl';
 import {
@@ -291,6 +292,19 @@ export async function checkAndExecuteSnapshots(): Promise<void> {
   }
 }
 
+// SOL链数据轮询（DexScreener + RugCheck）
+export async function pollSolanaData(): Promise<void> {
+  try {
+    const dexResult = await fetchAllSolTokenData();
+    const auditResult = await fetchAllSolAudits();
+    if (dexResult.updated > 0 || auditResult.audited > 0) {
+      logInfo('SOL数据', `轮询完成: dexUpdated=${dexResult.updated} audited=${auditResult.audited}`);
+    }
+  } catch (err) {
+    logError('SOL数据', `SOL数据轮询失败: ${err instanceof Error ? err.message : err}`);
+  }
+}
+
 // 启动所有轮询
 export function startPolling(): void {
   logInfo('轮询', '启动轮询服务...');
@@ -309,6 +323,7 @@ export function startPolling(): void {
   registerModule('onchain', '链上数据', 3 * 24 * 60 * 60 * 1000);
   registerModule('issuer', '发行方数据', 24 * 60 * 60 * 1000);
   registerModule('extended', '扩展数据', 60000);
+  registerModule('solana', 'SOL链数据', 120000);
 
   // 代币数据：每 30 秒
   const pollingId = setInterval(() => {
@@ -563,6 +578,41 @@ export function startPolling(): void {
       }
     }, 180000);
     setModuleIntervalId('discovery', id);
+  });
+
+  // SOL链数据（DexScreener + RugCheck）：每 120 秒（错开 60 秒启动）
+  setTimeout(() => {
+    if (!isModuleRunning('solana')) return;
+    const solanaId = setInterval(async () => {
+      if (!isModuleRunning('solana')) return;
+      try {
+        await pollSolanaData();
+        recordRun('solana', true);
+      } catch (err) {
+        recordRun('solana', false, String(err));
+      }
+    }, 120000);
+    setModuleIntervalId('solana', solanaId);
+    // 立即执行一次
+    if (isModuleRunning('solana')) {
+      pollSolanaData().then(() => {
+        recordRun('solana', true);
+      }).catch(err => {
+        recordRun('solana', false, String(err));
+      });
+    }
+  }, 60000);
+  registerModuleStarter('solana', () => {
+    const id = setInterval(async () => {
+      if (!isModuleRunning('solana')) return;
+      try {
+        await pollSolanaData();
+        recordRun('solana', true);
+      } catch (err) {
+        recordRun('solana', false, String(err));
+      }
+    }, 120000);
+    setModuleIntervalId('solana', id);
   });
 }
 
