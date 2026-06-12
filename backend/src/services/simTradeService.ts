@@ -184,11 +184,13 @@ export function reconcileBudget(): { used_budget: number; available_budget: numb
 export interface SimSettings {
   stop_loss_percent: number;
   take_profit_percent: number;
+  auto_mode: string;  // 'manual' | 'auto'
 }
 
 const SETTINGS_DEFAULTS: SimSettings = {
   stop_loss_percent: DEFAULT_STOP_LOSS,
   take_profit_percent: DEFAULT_TAKE_PROFIT,
+  auto_mode: 'manual',
 };
 
 /**
@@ -199,9 +201,11 @@ export function getSimSettings(): SimSettings {
   ensureSimTables();
   const sl = (db.prepare("SELECT value FROM sim_settings WHERE key = 'stop_loss_percent'") as SqliteStatement).get() as any;
   const tp = (db.prepare("SELECT value FROM sim_settings WHERE key = 'take_profit_percent'") as SqliteStatement).get() as any;
+  const am = (db.prepare("SELECT value FROM sim_settings WHERE key = 'auto_mode'") as SqliteStatement).get() as any;
   return {
     stop_loss_percent: sl ? parseFloat(sl.value) : SETTINGS_DEFAULTS.stop_loss_percent,
     take_profit_percent: tp ? parseFloat(tp.value) : SETTINGS_DEFAULTS.take_profit_percent,
+    auto_mode: am ? am.value : SETTINGS_DEFAULTS.auto_mode,
   };
 }
 
@@ -221,7 +225,12 @@ export function updateSimSettings(settings: Partial<SimSettings>): SimSettings {
     if (val <= 0 || val > 1000) throw new Error('take_profit_percent 必须在 0 到 1000 之间');
     db.prepare("INSERT INTO sim_settings (key, value, updated_at) VALUES ('take_profit_percent', ?, ?) ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = ?").run(val.toString(), now, val.toString(), now);
   }
-  logInfo('模拟交易', `设置更新: SL=${settings.stop_loss_percent}% TP=${settings.take_profit_percent}%`);
+  if (settings.auto_mode !== undefined) {
+    const val = settings.auto_mode;
+    if (val !== 'manual' && val !== 'auto') throw new Error('auto_mode 必须是 manual 或 auto');
+    db.prepare("INSERT INTO sim_settings (key, value, updated_at) VALUES ('auto_mode', ?, ?) ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = ?").run(val, now, val, now);
+  }
+  logInfo('模拟交易', `设置更新: SL=${settings.stop_loss_percent}% TP=${settings.take_profit_percent}% auto_mode=${settings.auto_mode}`);
   return getSimSettings();
 }
 

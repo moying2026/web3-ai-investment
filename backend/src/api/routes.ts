@@ -556,8 +556,8 @@ router.get('/sim/settings', (_req: Request, res: Response) => {
 router.put('/sim/settings', (req: Request, res: Response) => {
   try {
     ensureSimTables();
-    const { stop_loss_percent, take_profit_percent } = req.body;
-    const result = updateSimSettings({ stop_loss_percent, take_profit_percent });
+    const { stop_loss_percent, take_profit_percent, auto_mode } = req.body;
+    const result = updateSimSettings({ stop_loss_percent, take_profit_percent, auto_mode });
     logInfo('模拟交易', `设置更新API: SL=${result.stop_loss_percent}% TP=${result.take_profit_percent}%`);
     res.json({ code: 0, data: result });
   } catch (err: any) {
