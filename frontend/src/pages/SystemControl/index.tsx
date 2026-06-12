@@ -10,7 +10,7 @@ import {
   RobotOutlined,
   LineChartOutlined,
 } from '@ant-design/icons';
-import { systemApi } from '../../services/api';
+import { systemApi, simApi } from '../../services/api';
 
 interface ModuleStatus {
   id: string;
@@ -55,6 +55,11 @@ const SystemControl: React.FC = () => {
   const [proxyTesting, setProxyTesting] = useState(false);
   const [proxySaving, setProxySaving] = useState(false);
 
+  // 止盈止损设置
+  const [slPercent, setSlPercent] = useState<string>('-20');
+  const [tpPercent, setTpPercent] = useState<string>('50');
+  const [slTpSaving, setSlTpSaving] = useState(false);
+
   const loadStatus = useCallback(async () => {
     try {
       const data = await systemApi.getStatus();
@@ -65,6 +70,15 @@ const SystemControl: React.FC = () => {
       setProxyAddress(proxy.address ?? '');
       setProxyLastCheck(proxy.lastCheckTime ?? null);
       setProxyLastResult(proxy.lastCheckResult === true ? 'success' : proxy.lastCheckResult === false ? 'fail' : null);
+      // 加载止盈止损设置
+      try {
+        const settings = await simApi.getSettings();
+        const s = (settings as any)?.data || settings;
+        if (s) {
+          setSlPercent(String(s.stop_loss_percent ?? -20));
+          setTpPercent(String(s.take_profit_percent ?? 50));
+        }
+      } catch { /* 静默 */ }
     } catch { /* 静默 */ }
     finally { setLoading(false); }
   }, []);
@@ -137,6 +151,29 @@ const SystemControl: React.FC = () => {
     if (diff < 60000) return `${Math.floor(diff / 1000)}秒前`;
     if (diff < 3600000) return `${Math.floor(diff / 60000)}分钟前`;
     return d.toLocaleString();
+  };
+
+  // 保存止盈止损设置
+  const handleSlTpSave = async () => {
+    const sl = parseFloat(slPercent);
+    const tp = parseFloat(tpPercent);
+    if (isNaN(sl) || sl >= 0 || sl < -90) {
+      message.error('止损百分比必须在 -90 到 0 之间');
+      return;
+    }
+    if (isNaN(tp) || tp <= 0 || tp > 1000) {
+      message.error('止盈百分比必须在 0 到 1000 之间');
+      return;
+    }
+    setSlTpSaving(true);
+    try {
+      await simApi.updateSettings({ stop_loss_percent: sl, take_profit_percent: tp });
+      message.success('止盈止损设置已保存');
+    } catch {
+      message.error('保存失败');
+    } finally {
+      setSlTpSaving(false);
+    }
   };
 
   const allRunning = modules.length > 0 && modules.every(m => m.running);
@@ -230,6 +267,45 @@ const SystemControl: React.FC = () => {
             >
               测试
             </Button>
+          </div>
+        </Card>
+
+        {/* 止盈止损设置 */}
+        <Card size="small" style={{ marginBottom: 4 }} bodyStyle={{ padding: '4px 8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <span style={{ fontWeight: 'bold', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
+              <ThunderboltOutlined style={{ fontSize: 12, color: '#faad14' }} />
+              止盈止损
+            </span>
+            <span style={{ color: '#8c8c8c', fontSize: 10 }}>新建 BUY 时使用以下阈值</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 11, color: '#8c8c8c', whiteSpace: 'nowrap' }}>止损:</span>
+            <Input
+              size="small"
+              value={slPercent}
+              onChange={(e) => setSlPercent(e.target.value)}
+              addonAfter="%"
+              style={{ width: 100, fontSize: 11, height: 22 }}
+            />
+            <span style={{ fontSize: 11, color: '#8c8c8c', whiteSpace: 'nowrap' }}>止盈:</span>
+            <Input
+              size="small"
+              value={tpPercent}
+              onChange={(e) => setTpPercent(e.target.value)}
+              addonAfter="%"
+              style={{ width: 100, fontSize: 11, height: 22 }}
+            />
+            <Button
+              size="small"
+              type="primary"
+              loading={slTpSaving}
+              onClick={handleSlTpSave}
+              style={{ fontSize: 10, height: 22, padding: '0 6px' }}
+            >
+              保存
+            </Button>
+            <span style={{ color: '#8c8c8c', fontSize: 10 }}>止损范围: -90~0% | 止盈范围: 0~1000%</span>
           </div>
         </Card>
 

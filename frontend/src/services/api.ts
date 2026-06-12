@@ -83,6 +83,10 @@ export const simApi = {
     api.get<any, any>('/sim/daily-pnl', { params: { days: days ?? 30 } }),
   getOpenPositions: () =>
     api.get<any, any>('/sim/open-positions'),
+  getSettings: () =>
+    api.get<any, any>('/sim/settings'),
+  updateSettings: (settings: { stop_loss_percent?: number; take_profit_percent?: number }) =>
+    api.put<any, any>('/sim/settings', settings),
 };
 
 export const ruleApi = {
