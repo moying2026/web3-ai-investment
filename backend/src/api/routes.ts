@@ -19,7 +19,7 @@ import { fetchKlines } from '../services/binanceApi';
 import { getProxyStatus, setProxy, testProxy } from '../services/proxyService';
 import { addLogSSEClient, getRecentLogs, getLogSSEClientCount, logInfo, logWarn, logError } from '../services/logService';
 import { addSSEClient, getNewTokenBuffer, getLastPollTime, getSSEClientCount } from '../services/pollingService';
-import { ensureSimTables, placeOrder, closePosition, getPendingOrders, getTradesBySide, getPortfolioInfo, updateBudget, reconcileBudget, getOpenPositions } from '../services/simTradeService';
+import { ensureSimTables, placeOrder, closePosition, getPendingOrders, getTradesBySide, getPortfolioInfo, updateBudget, reconcileBudget, getOpenPositions, getSimSettings, updateSimSettings } from '../services/simTradeService';
 
 const router = Router();
 
@@ -538,6 +538,30 @@ router.post('/sim/portfolio/reconcile', (_req: Request, res: Response) => {
     res.json({ code: 0, data: result });
   } catch (err: any) {
     res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/sim/settings — 获取用户设置（止盈止损阈值等）
+router.get('/sim/settings', (_req: Request, res: Response) => {
+  try {
+    ensureSimTables();
+    const settings = getSimSettings();
+    res.json({ code: 0, data: settings });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// PUT /api/sim/settings — 更新用户设置（止盈止损阈值等）
+router.put('/sim/settings', (req: Request, res: Response) => {
+  try {
+    ensureSimTables();
+    const { stop_loss_percent, take_profit_percent } = req.body;
+    const result = updateSimSettings({ stop_loss_percent, take_profit_percent });
+    logInfo('模拟交易', `设置更新API: SL=${result.stop_loss_percent}% TP=${result.take_profit_percent}%`);
+    res.json({ code: 0, data: result });
+  } catch (err: any) {
+    res.status(400).json({ code: -1, message: err.message });
   }
 });
 

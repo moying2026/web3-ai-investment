@@ -13,8 +13,8 @@ interface SqliteStatement {
 
 const DEFAULT_BUY_AMOUNT = 100;
 const BUY_AMOUNT_MAP: Record<string, number> = { 'BUY': 100, 'HOLD': 50, 'AVOID': 10 };
-const DEFAULT_STOP_LOSS = -15;
-const DEFAULT_TAKE_PROFIT = 30;
+const DEFAULT_STOP_LOSS = -20;
+const DEFAULT_TAKE_PROFIT = 50;
 
 const CHAIN_PAYMENT_TOKEN: Record<string, string> = {
   'bsc': 'BNB', '56': 'BNB', 'solana': 'SOL', 'CT_501': 'SOL',
@@ -118,6 +118,14 @@ export function ensureSimTables(): void {
   if (!main) {
     db.prepare("INSERT INTO portfolio_state (portfolio_id, created_at, updated_at) VALUES ('main', ?, ?)").run(Date.now(), Date.now());
   }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sim_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at INTEGER
+    )
+  `);
 }
 
 // ==================== 预算控制 ====================
@@ -169,6 +177,52 @@ export function reconcileBudget(): { used_budget: number; available_budget: numb
 
   logInfo('模拟交易', `预算对账: used=$${usedBudget} available=$${availableBudget} positions=${actual.cnt}`);
   return { used_budget: usedBudget, available_budget: availableBudget, position_count: actual.cnt };
+}
+
+// ==================== 用户设置管理 ====================
+
+export interface SimSettings {
+  stop_loss_percent: number;
+  take_profit_percent: number;
+}
+
+const SETTINGS_DEFAULTS: SimSettings = {
+  stop_loss_percent: DEFAULT_STOP_LOSS,
+  take_profit_percent: DEFAULT_TAKE_PROFIT,
+};
+
+/**
+ * 获取用户设置的止盈止损阈值
+ * 优先从 sim_settings 表读取，无则返回系统默认值
+ */
+export function getSimSettings(): SimSettings {
+  ensureSimTables();
+  const sl = (db.prepare("SELECT value FROM sim_settings WHERE key = 'stop_loss_percent'") as SqliteStatement).get() as any;
+  const tp = (db.prepare("SELECT value FROM sim_settings WHERE key = 'take_profit_percent'") as SqliteStatement).get() as any;
+  return {
+    stop_loss_percent: sl ? parseFloat(sl.value) : SETTINGS_DEFAULTS.stop_loss_percent,
+    take_profit_percent: tp ? parseFloat(tp.value) : SETTINGS_DEFAULTS.take_profit_percent,
+  };
+}
+
+/**
+ * 更新用户设置的止盈止损阈值
+ */
+export function updateSimSettings(settings: Partial<SimSettings>): SimSettings {
+  ensureSimTables();
+  const now = Date.now();
+  if (settings.stop_loss_percent !== undefined) {
+    const val = settings.stop_loss_percent;
+    if (val >= 0 || val < -90) throw new Error('stop_loss_percent 必须在 -90 到 0 之间');
+    db.prepare("INSERT INTO sim_settings (key, value, updated_at) VALUES ('stop_loss_percent', ?, ?) ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = ?").run(val.toString(), now, val.toString(), now);
+  }
+  if (settings.take_profit_percent !== undefined) {
+    const val = settings.take_profit_percent;
+    if (val <= 0 || val > 1000) throw new Error('take_profit_percent 必须在 0 到 1000 之间');
+    db.prepare("INSERT INTO sim_settings (key, value, updated_at) VALUES ('take_profit_percent', ?, ?) ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = ?").run(val.toString(), now, val.toString(), now);
+  }
+  logInfo('模拟交易', `设置更新: SL=${settings.stop_loss_percent}% TP=${settings.take_profit_percent}%`);
+  return getSimSettings();
 }
 
 export function getPortfolioInfo(): any {
@@ -239,8 +293,10 @@ export function placeOrder(params: PlaceOrderParams): any {
   const fromAmount = params.from_amount || 0;
   const toAmount = params.to_amount || 0;
   const price = params.price || (fromAmount > 0 && toAmount > 0 ? toAmount / fromAmount : 0);
-  const slPct = params.stop_loss_percent ?? DEFAULT_STOP_LOSS;
-  const tpPct = params.take_profit_percent ?? DEFAULT_TAKE_PROFIT;
+  // 优先使用调用方传入的阈值，否则从用户设置读取，最后才是系统默认值
+  const userSettings = getSimSettings();
+  const slPct = params.stop_loss_percent ?? userSettings.stop_loss_percent;
+  const tpPct = params.take_profit_percent ?? userSettings.take_profit_percent;
   const slPrice = price > 0 ? (price * (1 + slPct / 100)).toString() : '0';
   const tpPrice = price > 0 ? (price * (1 + tpPct / 100)).toString() : '0';
 
@@ -274,7 +330,7 @@ export function placeOrder(params: PlaceOrderParams): any {
 
     if (params.side === 'BUY') {
       deductBudget(fromAmount);
-      createPendingSellOrders(tradeId, params.chain_id, params.contract_address, params.symbol || null, toAmount.toString(), price);
+      createPendingSellOrders(tradeId, params.chain_id, params.contract_address, params.symbol || null, toAmount.toString(), price, slPct, tpPct);
       db.prepare("UPDATE portfolio_state SET total_trades = total_trades + 1, position_count = position_count + 1, last_trade_at = ? WHERE portfolio_id = 'main'").run(now);
     }
 
@@ -305,15 +361,17 @@ export function placeOrder(params: PlaceOrderParams): any {
 
 // ==================== 挂单管理 ====================
 
-function createPendingSellOrders(buyTradeId: string, chainId: string, contractAddress: string, symbol: string | null, quantity: string, entryPrice: number): void {
+function createPendingSellOrders(buyTradeId: string, chainId: string, contractAddress: string, symbol: string | null, quantity: string, entryPrice: number, slPct?: number, tpPct?: number): void {
   if (!quantity || parseFloat(quantity) <= 0) return;
   const halfQty = (parseFloat(quantity) / 2).toString();
   const now = Date.now();
-  const slPrice = entryPrice * (1 + DEFAULT_STOP_LOSS / 100);
-  const tpPrice = entryPrice * (1 + DEFAULT_TAKE_PROFIT / 100);
+  const sl = slPct ?? DEFAULT_STOP_LOSS;
+  const tp = tpPct ?? DEFAULT_TAKE_PROFIT;
+  const slPrice = entryPrice * (1 + sl / 100);
+  const tpPrice = entryPrice * (1 + tp / 100);
 
-  (db.prepare(`INSERT INTO sim_pending_orders (order_id, parent_trade_id, chain_id, contract_address, symbol, side, order_type, quantity, trigger_price, trigger_percent, status, created_at) VALUES (?, ?, ?, ?, ?, 'SELL', 'STOP_LOSS', ?, ?, ?, 'PENDING', ?)`)).run(uuidv4(), buyTradeId, chainId, contractAddress, symbol, halfQty, slPrice.toString(), DEFAULT_STOP_LOSS, now);
-  (db.prepare(`INSERT INTO sim_pending_orders (order_id, parent_trade_id, chain_id, contract_address, symbol, side, order_type, quantity, trigger_price, trigger_percent, status, created_at) VALUES (?, ?, ?, ?, ?, 'SELL', 'TAKE_PROFIT', ?, ?, ?, 'PENDING', ?)`)).run(uuidv4(), buyTradeId, chainId, contractAddress, symbol, halfQty, tpPrice.toString(), DEFAULT_TAKE_PROFIT, now);
+  (db.prepare(`INSERT INTO sim_pending_orders (order_id, parent_trade_id, chain_id, contract_address, symbol, side, order_type, quantity, trigger_price, trigger_percent, status, created_at) VALUES (?, ?, ?, ?, ?, 'SELL', 'STOP_LOSS', ?, ?, ?, 'PENDING', ?)`)).run(uuidv4(), buyTradeId, chainId, contractAddress, symbol, halfQty, slPrice.toString(), sl, now);
+  (db.prepare(`INSERT INTO sim_pending_orders (order_id, parent_trade_id, chain_id, contract_address, symbol, side, order_type, quantity, trigger_price, trigger_percent, status, created_at) VALUES (?, ?, ?, ?, ?, 'SELL', 'TAKE_PROFIT', ?, ?, ?, 'PENDING', ?)`)).run(uuidv4(), buyTradeId, chainId, contractAddress, symbol, halfQty, tpPrice.toString(), tp, now);
 }
 
 export function checkAndTriggerPendingOrders(): number {
@@ -601,12 +659,13 @@ export function executeAutoBuyAll(): number {
     const rec = ai ? ai.recommendation : 'AVOID';
     const buyAmount = BUY_AMOUNT_MAP[rec] || 10;
     const paymentToken = getPaymentToken(token.chain_id);
+    const userSettings = getSimSettings();
     const result = placeOrder({
       chain_id: token.chain_id, contract_address: token.contract_address, symbol: token.symbol, side: 'BUY',
       from_token: paymentToken, from_amount: buyAmount, to_token: token.symbol, to_amount: buyAmount / entryPrice,
       price: entryPrice, is_simulated: 1, strategy: ai ? `ai_${rec.toLowerCase()}` : 'no_ai',
       trigger_reason: ai ? `AI:${ai.score}分(${rec})` : '无AI评估', trigger_scores: ai?.dimensionScores,
-      stop_loss_percent: DEFAULT_STOP_LOSS, take_profit_percent: DEFAULT_TAKE_PROFIT,
+      stop_loss_percent: userSettings.stop_loss_percent, take_profit_percent: userSettings.take_profit_percent,
     });
     if (result.success) buyCount++;
   }
