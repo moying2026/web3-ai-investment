@@ -19,6 +19,7 @@ import type { Token, Stats } from '../../types';
 import api, { tokenApi, statsApi, simApi, auditApi, dynamicApi, tokenAnalyzerApi, issuerRiskApi, createNewTokenSSE } from '../../services/api';
 import { formatPrice, formatPriceRaw, formatVolume, formatSupply, formatPercent } from '../../utils/format';
 import AIDiscussionPanel from '../../components/AIDiscussionPanel';
+import PositionMonitor from '../../components/PositionMonitor';
 import SystemControl from '../SystemControl';
 import RuntimeLogPanel from '../SystemControl/RuntimeLogPanel';
 
@@ -1454,6 +1455,9 @@ const Dashboard: React.FC = () => {
           </Card>
         </Col>
       </Row>
+
+      {/* 持仓监控 */}
+      <PositionMonitor />
 
       {/* 筛选区域 */}
       <Card
