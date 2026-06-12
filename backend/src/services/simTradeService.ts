@@ -13,8 +13,8 @@ interface SqliteStatement {
 
 const DEFAULT_BUY_AMOUNT = 100;
 const BUY_AMOUNT_MAP: Record<string, number> = { 'BUY': 100, 'HOLD': 50, 'AVOID': 10 };
-const DEFAULT_STOP_LOSS = -20;
-const DEFAULT_TAKE_PROFIT = 50;
+const DEFAULT_STOP_LOSS = -15;
+const DEFAULT_TAKE_PROFIT = 30;
 
 const CHAIN_PAYMENT_TOKEN: Record<string, string> = {
   'bsc': 'BNB', '56': 'BNB', 'solana': 'SOL', 'CT_501': 'SOL',
@@ -501,6 +501,82 @@ export function closePosition(trade: any, exitPrice: number, exitReason: string)
     holding_duration_minutes: holdMin,
     reason: exitReason,
   };
+}
+
+/**
+ * 获取所有未平仓订单（含当前价格、止盈止损价格、实时盈亏）
+ * 用于持仓实时监控面板
+ */
+export function getOpenPositions(): any[] {
+  ensureSimTables();
+  const openBuys = (db.prepare(`
+    SELECT t.trade_id, t.chain_id, t.contract_address, t.symbol, t.dex,
+           t.from_token, t.from_amount, t.to_token, t.to_amount, t.price as entry_price,
+           t.stop_loss_percent, t.take_profit_percent,
+           t.stop_loss_price, t.take_profit_price,
+           t.strategy, t.trigger_reason, t.created_at,
+           tk.price_latest, tk.symbol as token_symbol,
+           tk.holders, tk.liquidity, tk.market_cap
+    FROM sim_trades t
+    LEFT JOIN tokens tk ON t.chain_id = tk.chain_id AND t.contract_address = tk.contract_address
+    WHERE t.side = 'BUY' AND t.status = 'SUCCESS'
+    ORDER BY t.created_at DESC
+  `) as SqliteStatement).all() as any[];
+
+  return openBuys.map(trade => {
+    const currentPrice = parseFloat(trade.price_latest || '0');
+    const entryPrice = parseFloat(trade.entry_price || '0');
+    const buyAmount = parseFloat(trade.from_amount || '0');    // BUY时支付的金额
+    const tokenQty = parseFloat(trade.to_amount || '0');        // 持有的代币数量
+    const currentValue = tokenQty * currentPrice;               // 当前市值
+    const unrealizedPnl = currentValue - buyAmount;             // 未实现盈亏
+    const unrealizedPnlPct = buyAmount > 0 ? (unrealizedPnl / buyAmount) * 100 : 0;
+    const holdingMinutes = Math.floor((Date.now() - (trade.created_at || Date.now())) / 60000);
+
+    // 获取关联的挂单
+    const pendingOrders = (db.prepare(`
+      SELECT order_id, order_type, quantity, trigger_price, trigger_percent, status
+      FROM sim_pending_orders
+      WHERE parent_trade_id = ?
+      ORDER BY order_type
+    `) as SqliteStatement).all(trade.trade_id) as any[];
+
+    const slOrder = pendingOrders.find(o => o.order_type === 'STOP_LOSS');
+    const tpOrder = pendingOrders.find(o => o.order_type === 'TAKE_PROFIT');
+
+    return {
+      trade_id: trade.trade_id,
+      chain_id: trade.chain_id,
+      contract_address: trade.contract_address,
+      symbol: trade.symbol || trade.token_symbol,
+      dex: trade.dex,
+      // 买入信息
+      entry_price: entryPrice,
+      buy_amount: buyAmount,
+      buy_token: trade.from_token,
+      token_quantity: tokenQty,
+      // 当前市场
+      current_price: currentPrice,
+      current_value: parseFloat(currentValue.toFixed(6)),
+      holders: trade.holders,
+      liquidity: trade.liquidity,
+      market_cap: trade.market_cap,
+      // 实时盈亏
+      unrealized_pnl: parseFloat(unrealizedPnl.toFixed(6)),
+      unrealized_pnl_percent: parseFloat(unrealizedPnlPct.toFixed(2)),
+      holding_duration_minutes: holdingMinutes,
+      // 止盈止损
+      stop_loss_price: slOrder ? parseFloat(slOrder.trigger_price) : parseFloat(trade.stop_loss_price || '0'),
+      stop_loss_percent: trade.stop_loss_percent,
+      take_profit_price: tpOrder ? parseFloat(tpOrder.trigger_price) : parseFloat(trade.take_profit_price || '0'),
+      take_profit_percent: trade.take_profit_percent,
+      pending_orders: pendingOrders,
+      // 元信息
+      strategy: trade.strategy,
+      trigger_reason: trade.trigger_reason,
+      created_at: trade.created_at,
+    };
+  });
 }
 
 // ==================== 兼容旧接口 ====================

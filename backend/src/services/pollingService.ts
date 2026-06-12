@@ -5,7 +5,7 @@ import { initExtendedTables, fetchExtendedData } from './binanceExtendedApi';
 import { initAnalysisTable, analyzeNewTokens } from './aiAnalysisService';
 import { executeAutoBuyAll, checkAndClosePositions } from './simTradeService';
 import { db } from '../db/database';
-import { registerModule, isModuleRunning, recordRun, initSystemControl } from './systemControl';
+import { registerModule, isModuleRunning, recordRun, initSystemControl, setModuleIntervalId, registerModuleStarter } from './systemControl';
 import {
   isNewToken, insertToken, updateTokenLatestPrice,
   createTrackingPlans, getPendingSnapshotPlans, executeSnapshot,
@@ -298,51 +298,132 @@ export function startPolling(): void {
   // 初始化系统控制
   initSystemControl();
 
-  // 注册模块
-  registerModule('polling', '热门轮询', 30000); // 从 10 秒放宽到 30 秒，配合 1500ms 串行间隔
-  registerModule('discovery', '新币发现流', 180000); // 从 90 秒放宽到 180 秒
+  // 注册模块（包括后台任务，全部暂停时才能真正停止）
+  registerModule('polling', '热门轮询', 30000);
+  registerModule('discovery', '新币发现流', 180000);
   registerModule('ai', 'AI 评估引擎', 30000);
   registerModule('trading', '模拟交易', 10000);
   registerModule('trench', '战壕拦截', 30000);
+  registerModule('social', '社交话题', 120000);
+  registerModule('snapshot', '快照检查', 30000);
+  registerModule('onchain', '链上数据', 3 * 24 * 60 * 60 * 1000);
+  registerModule('issuer', '发行方数据', 24 * 60 * 60 * 1000);
+  registerModule('extended', '扩展数据', 60000);
 
-  // 代币数据：每 30 秒（从 10 秒进一步放宽，配合 1500ms 串行间隔）
-  setInterval(() => {
+  // 代币数据：每 30 秒
+  const pollingId = setInterval(() => {
     if (!isModuleRunning('polling')) return;
     pollTokenData();
     recordRun('polling', true);
   }, 30000);
+  setModuleIntervalId('polling', pollingId);
+  registerModuleStarter('polling', () => {
+    const id = setInterval(() => {
+      if (!isModuleRunning('polling')) return;
+      pollTokenData();
+      recordRun('polling', true);
+    }, 30000);
+    setModuleIntervalId('polling', id);
+  });
 
-  // 社交话题：每 120 秒（错开 20 秒启动，避免与 polling 并发）
+  // 社交话题：每 120 秒（错开 20 秒启动）
   setTimeout(() => {
-    setInterval(pollSocialTopics, 120000);
-    pollSocialTopics();
+    if (!isModuleRunning('social')) return;
+    const socialId = setInterval(() => {
+      if (!isModuleRunning('social')) return;
+      pollSocialTopics();
+      recordRun('social', true);
+    }, 120000);
+    setModuleIntervalId('social', socialId);
+    if (isModuleRunning('social')) pollSocialTopics();
   }, 20000);
+  registerModuleStarter('social', () => {
+    const id = setInterval(() => {
+      if (!isModuleRunning('social')) return;
+      pollSocialTopics();
+      recordRun('social', true);
+    }, 120000);
+    setModuleIntervalId('social', id);
+  });
 
   // 快照检查：每 30 秒（错开 10 秒启动）
   setTimeout(() => {
-    setInterval(checkAndExecuteSnapshots, 30000);
+    if (!isModuleRunning('snapshot')) return;
+    const snapshotId = setInterval(() => {
+      if (!isModuleRunning('snapshot')) return;
+      checkAndExecuteSnapshots();
+      recordRun('snapshot', true);
+    }, 30000);
+    setModuleIntervalId('snapshot', snapshotId);
   }, 10000);
+  registerModuleStarter('snapshot', () => {
+    const id = setInterval(() => {
+      if (!isModuleRunning('snapshot')) return;
+      checkAndExecuteSnapshots();
+      recordRun('snapshot', true);
+    }, 30000);
+    setModuleIntervalId('snapshot', id);
+  });
 
   // 链上数据：每 3 天自动同步一次
-  setInterval(fetchOnchainSupplyData, 3 * 24 * 60 * 60 * 1000);
+  const onchainId = setInterval(() => {
+    if (!isModuleRunning('onchain')) return;
+    fetchOnchainSupplyData();
+    recordRun('onchain', true);
+  }, 3 * 24 * 60 * 60 * 1000);
+  setModuleIntervalId('onchain', onchainId);
+  registerModuleStarter('onchain', () => {
+    const id = setInterval(() => {
+      if (!isModuleRunning('onchain')) return;
+      fetchOnchainSupplyData();
+      recordRun('onchain', true);
+    }, 3 * 24 * 60 * 60 * 1000);
+    setModuleIntervalId('onchain', id);
+  });
 
   // 发行方数据：每 24 小时自动同步一次
-  setInterval(fetchIssuerData, 24 * 60 * 60 * 1000);
+  const issuerId = setInterval(() => {
+    if (!isModuleRunning('issuer')) return;
+    fetchIssuerData();
+    recordRun('issuer', true);
+  }, 24 * 60 * 60 * 1000);
+  setModuleIntervalId('issuer', issuerId);
+  registerModuleStarter('issuer', () => {
+    const id = setInterval(() => {
+      if (!isModuleRunning('issuer')) return;
+      fetchIssuerData();
+      recordRun('issuer', true);
+    }, 24 * 60 * 60 * 1000);
+    setModuleIntervalId('issuer', id);
+  });
 
   // 扩展数据（审计/动态/Smart Money）：每 60 秒（错开 10 秒启动）
   initExtendedTables();
   setTimeout(() => {
-    setInterval(fetchExtendedData, 60000);
-    fetchExtendedData();
+    if (!isModuleRunning('extended')) return;
+    const extendedId = setInterval(() => {
+      if (!isModuleRunning('extended')) return;
+      fetchExtendedData();
+      recordRun('extended', true);
+    }, 60000);
+    setModuleIntervalId('extended', extendedId);
+    if (isModuleRunning('extended')) fetchExtendedData();
   }, 10000);
+  registerModuleStarter('extended', () => {
+    const id = setInterval(() => {
+      if (!isModuleRunning('extended')) return;
+      fetchExtendedData();
+      recordRun('extended', true);
+    }, 60000);
+    setModuleIntervalId('extended', id);
+  });
 
   // AI 分析 + 全量自动模拟买入：每 30 秒
   initAnalysisTable();
-  setInterval(() => {
+  const aiId = setInterval(() => {
     if (!isModuleRunning('ai')) return;
     try {
       const results = analyzeNewTokens();
-      // 全量买入：所有新币都买，不依赖 AI 评分
       const buyCount = executeAutoBuyAll();
       if (buyCount > 0) logInfo('模拟交易', `全量买入 ${buyCount} 笔`);
       recordRun('ai', true, undefined, { analyzed: results.length, bought: buyCount });
@@ -350,10 +431,25 @@ export function startPolling(): void {
       recordRun('ai', false, String(err));
     }
   }, 30000);
+  setModuleIntervalId('ai', aiId);
+  registerModuleStarter('ai', () => {
+    const id = setInterval(() => {
+      if (!isModuleRunning('ai')) return;
+      try {
+        const results = analyzeNewTokens();
+        const buyCount = executeAutoBuyAll();
+        if (buyCount > 0) logInfo('模拟交易', `全量买入 ${buyCount} 笔`);
+        recordRun('ai', true, undefined, { analyzed: results.length, bought: buyCount });
+      } catch (err) {
+        recordRun('ai', false, String(err));
+      }
+    }, 30000);
+    setModuleIntervalId('ai', id);
+  });
 
   // 多 Agent 评分：每 30 秒
   const { evaluateDecision, storeAgentScores } = require('./agents/decisionAgent');
-  setInterval(() => {
+  const trenchId = setInterval(() => {
     if (!isModuleRunning('trench')) return;
     try {
       const newTokens = db.prepare(`
@@ -379,9 +475,40 @@ export function startPolling(): void {
       recordRun('trench', false, String(e));
     }
   }, 30000);
+  setModuleIntervalId('trench', trenchId);
+  registerModuleStarter('trench', () => {
+    const { evaluateDecision, storeAgentScores } = require('./agents/decisionAgent');
+    const id = setInterval(() => {
+      if (!isModuleRunning('trench')) return;
+      try {
+        const newTokens = db.prepare(`
+          SELECT t.chain_id, t.contract_address, t.symbol
+          FROM tokens t
+          LEFT JOIN agent_scores ag ON t.chain_id = ag.chain_id AND t.contract_address = ag.contract_address AND ag.agent_type = 'decision'
+          WHERE ag.id IS NULL AND t.first_seen_at > datetime('now', '-24 hours')
+          ORDER BY t.first_seen_at DESC LIMIT 5
+        `).all() as any[];
+        let scored = 0;
+        for (const token of newTokens) {
+          try {
+            const decision = evaluateDecision({ chainId: token.chain_id, contractAddress: token.contract_address, symbol: token.symbol });
+            storeAgentScores(token.chain_id, token.contract_address, decision);
+            scored++;
+            logInfo('Agent评分', `${token.symbol}: score=${decision.score} rec=${decision.recommendation} confidence=${decision.confidence.toFixed(2)}`);
+          } catch (e) {
+            logError('Agent评分', `评分失败 ${token.symbol}: ${e instanceof Error ? e.message : e}`);
+          }
+        }
+        recordRun('trench', true, undefined, { scored });
+      } catch (e) {
+        recordRun('trench', false, String(e));
+      }
+    }, 30000);
+    setModuleIntervalId('trench', id);
+  });
 
   // 持仓检查（止盈止损）：每 10 秒
-  setInterval(() => {
+  const tradingId = setInterval(() => {
     if (!isModuleRunning('trading')) return;
     try {
       const closed = checkAndClosePositions();
@@ -390,10 +517,23 @@ export function startPolling(): void {
       recordRun('trading', false, String(err));
     }
   }, 10000);
+  setModuleIntervalId('trading', tradingId);
+  registerModuleStarter('trading', () => {
+    const id = setInterval(() => {
+      if (!isModuleRunning('trading')) return;
+      try {
+        const closed = checkAndClosePositions();
+        recordRun('trading', true, undefined, { closed });
+      } catch (err) {
+        recordRun('trading', false, String(err));
+      }
+    }, 10000);
+    setModuleIntervalId('trading', id);
+  });
 
   // 新币发现流：每 180 秒（从 90 秒放宽，错开 45 秒启动避免与 polling 并发）
   setTimeout(() => {
-    setInterval(async () => {
+    const discoveryId = setInterval(async () => {
       if (!isModuleRunning('discovery')) return;
       try {
         await pollLatestTokens();
@@ -402,13 +542,28 @@ export function startPolling(): void {
         recordRun('discovery', false, String(err));
       }
     }, 180000);
+    setModuleIntervalId('discovery', discoveryId);
     // 立即执行一次
-    pollLatestTokens().then(() => {
-      recordRun('discovery', true, undefined, { pollCount: discoveryPollCount });
-    }).catch(err => {
-      recordRun('discovery', false, String(err));
-    });
+    if (isModuleRunning('discovery')) {
+      pollLatestTokens().then(() => {
+        recordRun('discovery', true, undefined, { pollCount: discoveryPollCount });
+      }).catch(err => {
+        recordRun('discovery', false, String(err));
+      });
+    }
   }, 45000); // 延迟 45 秒启动，错开其他模块
+  registerModuleStarter('discovery', () => {
+    const id = setInterval(async () => {
+      if (!isModuleRunning('discovery')) return;
+      try {
+        await pollLatestTokens();
+        recordRun('discovery', true, undefined, { pollCount: discoveryPollCount });
+      } catch (err) {
+        recordRun('discovery', false, String(err));
+      }
+    }, 180000);
+    setModuleIntervalId('discovery', id);
+  });
 }
 
 export function getNewTokenBuffer(): BinanceToken[] {

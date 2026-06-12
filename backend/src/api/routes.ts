@@ -19,7 +19,7 @@ import { fetchKlines } from '../services/binanceApi';
 import { getProxyStatus, setProxy, testProxy } from '../services/proxyService';
 import { addLogSSEClient, getRecentLogs, getLogSSEClientCount, logInfo, logWarn, logError } from '../services/logService';
 import { addSSEClient, getNewTokenBuffer, getLastPollTime, getSSEClientCount } from '../services/pollingService';
-import { ensureSimTables, placeOrder, closePosition, getPendingOrders, getTradesBySide, getPortfolioInfo, updateBudget, reconcileBudget } from '../services/simTradeService';
+import { ensureSimTables, placeOrder, closePosition, getPendingOrders, getTradesBySide, getPortfolioInfo, updateBudget, reconcileBudget, getOpenPositions } from '../services/simTradeService';
 
 const router = Router();
 
@@ -570,6 +570,34 @@ router.get('/sim/pending-orders', (req: Request, res: Response) => {
     const status = qs(req.query.status) || 'PENDING';
     const orders = getPendingOrders(status);
     res.json({ code: 0, data: orders });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/sim/open-positions — 未平仓订单列表（含当前价格、止盈止损价格、实时盈亏）
+router.get('/sim/open-positions', (_req: Request, res: Response) => {
+  try {
+    ensureSimTables();
+    const positions = getOpenPositions();
+    // 计算汇总
+    const totalInvested = positions.reduce((s: number, p: any) => s + p.buy_amount, 0);
+    const totalCurrentValue = positions.reduce((s: number, p: any) => s + p.current_value, 0);
+    const totalUnrealizedPnl = positions.reduce((s: number, p: any) => s + p.unrealized_pnl, 0);
+    const avgPnlPct = positions.length > 0 ? positions.reduce((s: number, p: any) => s + p.unrealized_pnl_percent, 0) / positions.length : 0;
+    res.json({
+      code: 0,
+      data: {
+        positions,
+        summary: {
+          count: positions.length,
+          total_invested: parseFloat(totalInvested.toFixed(2)),
+          total_current_value: parseFloat(totalCurrentValue.toFixed(2)),
+          total_unrealized_pnl: parseFloat(totalUnrealizedPnl.toFixed(2)),
+          avg_pnl_percent: parseFloat(avgPnlPct.toFixed(2)),
+        },
+      },
+    });
   } catch (err: any) {
     res.status(500).json({ code: -1, message: err.message });
   }

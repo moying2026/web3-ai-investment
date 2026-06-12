@@ -22,6 +22,9 @@ export interface ModuleStatus {
   metrics: Record<string, any>;
 }
 
+// 模块启动函数（用于恢复时重启定时任务）
+const moduleStarters: Map<string, () => void> = new Map();
+
 // 内存中的模块状态
 const moduleStates: Map<string, {
   running: boolean;
@@ -174,6 +177,20 @@ export function toggleModule(id: string, running: boolean): boolean {
 
   state.running = running;
 
+  // 暂停时清除定时器
+  if (!running && state.intervalId) {
+    clearInterval(state.intervalId);
+    state.intervalId = null;
+  }
+
+  // 启动时重新创建定时任务
+  if (running) {
+    const starter = moduleStarters.get(id);
+    if (starter) {
+      starter();
+    }
+  }
+
   // 更新数据库
   db.prepare('UPDATE system_modules SET running = ?, updated_at = datetime(\'now\') WHERE id = ?')
     .run(running ? 1 : 0, id);
@@ -200,4 +217,9 @@ export function setModuleIntervalId(id: string, intervalId: ReturnType<typeof se
 export function getModuleIntervalId(id: string): ReturnType<typeof setInterval> | null {
   const state = moduleStates.get(id);
   return state?.intervalId ?? null;
+}
+
+// 注册模块启动函数（用于恢复时重启定时任务）
+export function registerModuleStarter(id: string, starter: () => void): void {
+  moduleStarters.set(id, starter);
 }
