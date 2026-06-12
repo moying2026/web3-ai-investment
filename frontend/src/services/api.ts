@@ -85,7 +85,7 @@ export const simApi = {
     api.get<any, any>('/sim/open-positions'),
   getSettings: () =>
     api.get<any, any>('/sim/settings'),
-  updateSettings: (settings: { stop_loss_percent?: number; take_profit_percent?: number }) =>
+  updateSettings: (settings: { stop_loss_percent?: number; take_profit_percent?: number; auto_mode?: string }) =>
     api.put<any, any>('/sim/settings', settings),
 };
 

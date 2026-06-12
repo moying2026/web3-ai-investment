@@ -70,13 +70,14 @@ const SystemControl: React.FC = () => {
       setProxyAddress(proxy.address ?? '');
       setProxyLastCheck(proxy.lastCheckTime ?? null);
       setProxyLastResult(proxy.lastCheckResult === true ? 'success' : proxy.lastCheckResult === false ? 'fail' : null);
-      // 加载止盈止损设置
+      // 加载止盈止损 + 交易模式设置
       try {
         const settings = await simApi.getSettings();
         const s = (settings as any)?.data || settings;
         if (s) {
           setSlPercent(String(s.stop_loss_percent ?? -20));
           setTpPercent(String(s.take_profit_percent ?? 50));
+          setAutoMode(s.auto_mode === 'auto');
         }
       } catch { /* 静默 */ }
     } catch { /* 静默 */ }
@@ -378,7 +379,16 @@ const SystemControl: React.FC = () => {
             </span>
             <Switch
               checked={autoMode}
-              onChange={setAutoMode}
+              onChange={async (checked) => {
+                setAutoMode(checked);
+                try {
+                  await simApi.updateSettings({ auto_mode: checked ? 'auto' : 'manual' });
+                  message.success(`已切换为${checked ? 'AI全自动' : 'AI辅助手动'}模式`);
+                } catch {
+                  message.error('交易模式保存失败');
+                  setAutoMode(!checked);
+                }
+              }}
               checkedChildren="自动"
               unCheckedChildren="手动"
               style={{ height: 20, lineHeight: '20px', fontSize: 10 }}
