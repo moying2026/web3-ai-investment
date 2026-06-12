@@ -20,6 +20,7 @@ import api, { tokenApi, statsApi, simApi, auditApi, dynamicApi, tokenAnalyzerApi
 import { formatPrice, formatPriceRaw, formatVolume, formatSupply, formatPercent } from '../../utils/format';
 import AIDiscussionPanel from '../../components/AIDiscussionPanel';
 import SystemControl from '../SystemControl';
+import RuntimeLogPanel from '../SystemControl/RuntimeLogPanel';
 
 // 筛选参数类型
 interface FilterParams {
@@ -1608,7 +1609,7 @@ const Dashboard: React.FC = () => {
               items={[
                 {
                   key: 'Tab1',
-                  label: '运行状态',
+                  label: '系统设置',
                   children: <div style={{ overflowY: 'auto', height: 460, fontSize: 12 }}>
                     <SystemControl />
                   </div>,
@@ -1645,6 +1646,13 @@ const Dashboard: React.FC = () => {
                     {selectedToken
                       ? <AIDiscussionPanel chain={selectedToken.chain} address={selectedToken.address} />
                       : <div style={{ padding: '40px 0', color: '#8c8c8c', textAlign: 'center' }}>请点击左侧代币启动 AI 讨论</div>}
+                  </div>,
+                },
+                {
+                  key: 'Tab6',
+                  label: '运行日志',
+                  children: <div style={{ height: 460, display: 'flex', flexDirection: 'column' }}>
+                    <RuntimeLogPanel />
                   </div>,
                 },
               ]}
