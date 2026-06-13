@@ -8,6 +8,7 @@ import Trading from './pages/Trading';
 import Rules from './pages/Rules';
 import IssuerProfile from './pages/IssuerProfile';
 import SmartMoneySignals from './pages/SmartMoney';
+import TokenAnalysis from './pages/TokenAnalysis';
 
 const App: React.FC = () => {
   return (
@@ -20,6 +21,7 @@ const App: React.FC = () => {
             <Route path="rules" element={<Rules />} />
             <Route path="issuer/:address" element={<IssuerProfile />} />
             <Route path="signals" element={<SmartMoneySignals />} />
+            <Route path="analysis" element={<TokenAnalysis />} />
           </Route>
         </Routes>
       </BrowserRouter>

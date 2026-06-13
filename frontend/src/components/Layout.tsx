@@ -8,6 +8,7 @@ import {
   UserOutlined,
   WalletOutlined,
   ThunderboltOutlined,
+  SearchOutlined,
 } from '@ant-design/icons';
 import { mockPortfolioStats } from '../mock/data';
 
@@ -27,12 +28,14 @@ const AppLayout: React.FC = () => {
     if (path.startsWith('/rules')) return '/rules';
     if (path.startsWith('/issuer')) return '/issuer';
     if (path.startsWith('/signals')) return '/signals';
+    if (path.startsWith('/analysis')) return '/analysis';
     return '/';
   };
 
   const menuItems = [
     { key: '/', icon: <DashboardOutlined />, label: '实时监控' },
     { key: '/trading', icon: <SwapOutlined />, label: '交易' },
+    { key: '/analysis', icon: <SearchOutlined />, label: '代币分析' },
     { key: '/rules', icon: <ControlOutlined />, label: '规则引擎' },
     { key: '/issuer', icon: <UserOutlined />, label: '发行方画像' },
     { key: '/signals', icon: <ThunderboltOutlined />, label: '聪明钱' },

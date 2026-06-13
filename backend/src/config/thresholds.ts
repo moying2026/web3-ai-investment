@@ -1,6 +1,7 @@
 // 阈值配置 — 所有规则引擎阈值集中管理，便于后期根据实际数据调整
 
-export const THRESHOLDS = {
+// 默认阈值（代码中的默认值）
+const DEFAULT_THRESHOLDS = {
   // 发行方风险
   issuer: {
     totalTokensHigh: 100,       // 发行代币总数 >100 → 高风险
@@ -56,3 +57,50 @@ export const THRESHOLDS = {
     takeProfitPercent: 50,      // 止盈 +50%
   },
 } as const;
+
+// 运行时阈值（可从数据库加载）
+export const THRESHOLDS = { ...DEFAULT_THRESHOLDS };
+
+// 从数据库加载阈值到内存
+export function loadThresholdsFromDB(): void {
+  try {
+    const { db } = require('../db/database');
+    const rows = db.prepare('SELECT key, value FROM ai_thresholds').all() as any[];
+    
+    for (const row of rows) {
+      const val = parseFloat(row.value);
+      if (isNaN(val)) continue;
+      
+      switch (row.key) {
+        // 决策权重
+        case 'dimension_weight_risk':
+          (THRESHOLDS.decision.weights as any).risk = val; break;
+        case 'dimension_weight_market':
+          (THRESHOLDS.decision.weights as any).market = val; break;
+        case 'dimension_weight_issuer':
+          (THRESHOLDS.decision.weights as any).issuer = val; break;
+        case 'dimension_weight_onchain':
+          (THRESHOLDS.decision.weights as any).onchain = val; break;
+        case 'dimension_weight_liquidity':
+          (THRESHOLDS.decision.weights as any).liquidity = val; break;
+        // 决策阈值
+        case 'buy_threshold':
+          (THRESHOLDS.decision as any).buyThreshold = val; break;
+        case 'hold_threshold':
+          (THRESHOLDS.decision as any).holdThreshold = val; break;
+        case 'watch_threshold':
+          (THRESHOLDS.decision as any).watchThreshold = val; break;
+        // 交易金额
+        case 'buy_amount_buy':
+          (THRESHOLDS.simulation as any).defaultBuyAmount = val; break;
+        case 'stop_loss_percent':
+          (THRESHOLDS.simulation as any).stopLossPercent = val; break;
+        case 'take_profit_percent':
+          (THRESHOLDS.simulation as any).takeProfitPercent = val; break;
+      }
+    }
+    console.log('[Thresholds] 从数据库加载阈值配置完成');
+  } catch (err: any) {
+    console.error('[Thresholds] 加载数据库阈值失败:', err.message);
+  }
+}

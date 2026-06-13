@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Table, Tag, Progress, Row, Col, Statistic, Spin, Empty } from 'antd';
+import { Card, Table, Tag, Progress, Row, Col, Statistic, Spin, Empty, Tabs, Alert, Tooltip, Button, InputNumber, Form, message } from 'antd';
 import {
   SafetyOutlined,
   TeamOutlined,
@@ -7,6 +7,10 @@ import {
   BankOutlined,
   DollarOutlined,
   ThunderboltOutlined,
+  QuestionCircleOutlined,
+  EditOutlined,
+  SaveOutlined,
+  UndoOutlined,
 } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
 import { ruleApi } from '../../services/api';
@@ -59,6 +63,39 @@ interface SimStatsData {
   byChain: Array<{ chain_id: string; count: number; wins: number; total_pnl: number }>;
 }
 
+interface DecisionCriteria {
+  dimensions: Array<{
+    key: string;
+    name: string;
+    maxScore: number;
+    weight: number;
+    criteria: Array<{
+      condition: string;
+      score: number;
+      description: string;
+    }>;
+  }>;
+  decisionRules: {
+    buyThreshold: number;
+    holdThreshold: number;
+    watchThreshold: number;
+    riskDowngradeRule: string;
+  };
+  tradingRules: {
+    buyAmountMap: Record<string, { amount: number; description: string }>;
+    budget: {
+      totalBudget: number;
+      maxPerTrade: number;
+      maxPositions: number;
+      maxChainPercent: number;
+    };
+    stopLoss: number;
+    takeProfit: number;
+  };
+  issuerRisk: Record<string, number>;
+  addressRisk: Record<string, number>;
+}
+
 const chainMap: Record<string, string> = { '56': 'BSC', 'CT_501': 'SOL', '1': 'ETH', '8453': 'Base' };
 
 const dimensionMeta: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
@@ -82,20 +119,61 @@ const recLabelMap: Record<string, { text: string; color: string }> = {
 const Rules: React.FC = () => {
   const [analysis, setAnalysis] = useState<AnalysisData | null>(null);
   const [simStats, setSimStats] = useState<SimStatsData | null>(null);
+  const [criteria, setCriteria] = useState<DecisionCriteria | null>(null);
+  const [thresholds, setThresholds] = useState<Record<string, string> | null>(null);
   const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editForm] = Form.useForm();
 
   useEffect(() => {
     const load = async () => {
       setLoading(true);
       try {
-        const [a, s] = await Promise.all([ruleApi.getAnalysis(), ruleApi.getSimStats()]);
+        const [a, s, c, t] = await Promise.all([
+          ruleApi.getAnalysis(),
+          ruleApi.getSimStats(),
+          ruleApi.getDecisionCriteria(),
+          ruleApi.getThresholds(),
+        ]);
         setAnalysis(a as any);
         setSimStats(s as any);
+        setCriteria(c as any);
+        setThresholds(t as any);
+        // 初始化表单值
+        if (t) {
+          editForm.setFieldsValue(t);
+        }
       } catch { /* 静默 */ }
       finally { setLoading(false); }
     };
     load();
-  }, []);
+  }, [editForm]);
+
+  // 保存阈值配置
+  const handleSave = async () => {
+    try {
+      const values = await editForm.validateFields();
+      setSaving(true);
+      await ruleApi.updateThresholds(values);
+      setThresholds(values);
+      setEditing(false);
+      message.success('阈值配置已保存');
+      // 重新加载配置
+      const c = await ruleApi.getDecisionCriteria();
+      setCriteria(c as any);
+    } catch (err) {
+      message.error('保存失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // 取消编辑
+  const handleCancel = () => {
+    editForm.setFieldsValue(thresholds || {});
+    setEditing(false);
+  };
 
   // 评分维度雷达图
   const dimKeys = Object.keys(dimensionMeta);
@@ -363,6 +441,270 @@ const Rules: React.FC = () => {
             </Card>
           </Col>
         </Row>
+
+        {/* AI 决策标准 */}
+        {criteria && (
+          <Card 
+            title="🤖 AI 决策标准" 
+            style={{ marginBottom: 24 }}
+            extra={
+              editing ? (
+                <span>
+                  <Button 
+                    type="primary" 
+                    icon={<SaveOutlined />} 
+                    onClick={handleSave}
+                    loading={saving}
+                    style={{ marginRight: 8 }}
+                  >
+                    保存
+                  </Button>
+                  <Button icon={<UndoOutlined />} onClick={handleCancel}>
+                    取消
+                  </Button>
+                </span>
+              ) : (
+                <Button type="primary" ghost icon={<EditOutlined />} onClick={() => setEditing(true)}>
+                  编辑配置
+                </Button>
+              )
+            }
+          >
+            <Alert
+              message="以下为 AI 评分系统实际使用的决策标准和阈值，点击编辑配置可修改"
+              type="info"
+              showIcon
+              style={{ marginBottom: 16 }}
+            />
+            
+            <Form form={editForm} layout="vertical">
+              <Tabs items={[
+                {
+                  key: 'dimensions',
+                  label: '评分维度',
+                  children: (
+                    <Table
+                      dataSource={criteria.dimensions}
+                      rowKey="key"
+                      size="small"
+                      pagination={false}
+                      columns={[
+                        {
+                          title: '维度',
+                          dataIndex: 'name',
+                          key: 'name',
+                          render: (v: string, r: any) => (
+                            <span>
+                              {v}
+                              <Tooltip title={`权重: ${(r.weight * 100).toFixed(0)}%`}>
+                                <QuestionCircleOutlined style={{ marginLeft: 4, color: '#999' }} />
+                              </Tooltip>
+                            </span>
+                          ),
+                        },
+                        { title: '满分', dataIndex: 'maxScore', key: 'maxScore', width: 80 },
+                        {
+                          title: '权重',
+                          dataIndex: 'weight',
+                          key: 'weight',
+                          width: 120,
+                          render: (_: number, r: any) => {
+                            const key = `dimension_weight_${r.key}`;
+                            return editing ? (
+                              <Form.Item name={key} noStyle>
+                                <InputNumber min={0} max={1} step={0.05} style={{ width: 80 }} />
+                              </Form.Item>
+                            ) : (
+                              `${(r.weight * 100).toFixed(0)}%`
+                            );
+                          },
+                        },
+                        {
+                          title: '评分规则',
+                          dataIndex: 'criteria',
+                          key: 'criteria',
+                          render: (items: Array<{ condition: string; score: number; description: string }>) => (
+                            <div style={{ fontSize: 12 }}>
+                              {items.map((item, i) => (
+                                <div key={i} style={{ marginBottom: 4 }}>
+                                  <Tag color={item.score > 0 ? 'green' : item.score < 0 ? 'red' : 'default'}>
+                                    {item.score > 0 ? '+' : ''}{item.score}
+                                  </Tag>
+                                  {item.condition}
+                                  <span style={{ color: '#999' }}> — {item.description}</span>
+                                </div>
+                              ))}
+                            </div>
+                          ),
+                        },
+                      ]}
+                    />
+                  ),
+                },
+                {
+                  key: 'thresholds',
+                  label: '决策阈值',
+                  children: (
+                    <Row gutter={16}>
+                      <Col span={12}>
+                        <Card title="综合评分阈值" size="small" type="inner">
+                          <Form form={editForm} layout="vertical">
+                            <Row gutter={16}>
+                              <Col span={8}>
+                                <Form.Item label="BUY 阈值" name="buy_threshold">
+                                  <InputNumber min={0} max={100} style={{ width: '100%' }} />
+                                </Form.Item>
+                              </Col>
+                              <Col span={8}>
+                                <Form.Item label="HOLD 阈值" name="hold_threshold">
+                                  <InputNumber min={0} max={100} style={{ width: '100%' }} />
+                                </Form.Item>
+                              </Col>
+                              <Col span={8}>
+                                <Form.Item label="WATCH 阈值" name="watch_threshold">
+                                  <InputNumber min={0} max={100} style={{ width: '100%' }} />
+                                </Form.Item>
+                              </Col>
+                            </Row>
+                          </Form>
+                          <Table
+                            dataSource={[
+                              { score: `≥${thresholds?.buy_threshold || criteria.decisionRules.buyThreshold}`, rec: 'BUY', desc: '建议买入', color: 'green' },
+                              { score: `≥${thresholds?.hold_threshold || criteria.decisionRules.holdThreshold}`, rec: 'HOLD', desc: '建议持有', color: 'blue' },
+                              { score: `≥${thresholds?.watch_threshold || criteria.decisionRules.watchThreshold}`, rec: 'WATCH', desc: '建议观望', color: 'orange' },
+                              { score: `<${thresholds?.watch_threshold || criteria.decisionRules.watchThreshold}`, rec: 'AVOID', desc: '建议回避', color: 'red' },
+                            ]}
+                            rowKey="rec"
+                            size="small"
+                            pagination={false}
+                            columns={[
+                              { title: '分数区间', dataIndex: 'score', key: 'score' },
+                              { title: '建议', dataIndex: 'rec', key: 'rec', render: (v: string, r: any) => <Tag color={r.color}>{v}</Tag> },
+                              { title: '说明', dataIndex: 'desc', key: 'desc' },
+                            ]}
+                          />
+                          <Alert
+                            message={criteria.decisionRules.riskDowngradeRule}
+                            type="warning"
+                            style={{ marginTop: 8 }}
+                          />
+                        </Card>
+                      </Col>
+                      <Col span={12}>
+                        <Card title="交易金额配置" size="small" type="inner">
+                          <Form form={editForm} layout="vertical">
+                            <Row gutter={16}>
+                              <Col span={8}>
+                                <Form.Item label="BUY 金额" name="buy_amount_buy">
+                                  <InputNumber min={1} max={10000} style={{ width: '100%' }} prefix="$" />
+                                </Form.Item>
+                              </Col>
+                              <Col span={8}>
+                                <Form.Item label="HOLD 金额" name="buy_amount_hold">
+                                  <InputNumber min={1} max={10000} style={{ width: '100%' }} prefix="$" />
+                                </Form.Item>
+                              </Col>
+                              <Col span={8}>
+                                <Form.Item label="AVOID 金额" name="buy_amount_avoid">
+                                  <InputNumber min={0} max={10000} style={{ width: '100%' }} prefix="$" />
+                                </Form.Item>
+                              </Col>
+                            </Row>
+                            <Row gutter={16}>
+                              <Col span={12}>
+                                <Form.Item label="总预算" name="total_budget">
+                                  <InputNumber min={1000} max={1000000} style={{ width: '100%' }} prefix="$" />
+                                </Form.Item>
+                              </Col>
+                              <Col span={12}>
+                                <Form.Item label="单笔上限" name="max_per_trade">
+                                  <InputNumber min={1} max={10000} style={{ width: '100%' }} prefix="$" />
+                                </Form.Item>
+                              </Col>
+                            </Row>
+                            <Row gutter={16}>
+                              <Col span={12}>
+                                <Form.Item label="最大持仓数" name="max_positions">
+                                  <InputNumber min={1} max={10000} style={{ width: '100%' }} />
+                                </Form.Item>
+                              </Col>
+                              <Col span={12}>
+                                <Form.Item label="单链上限(%)" name="max_chain_pct">
+                                  <InputNumber min={1} max={100} style={{ width: '100%' }} />
+                                </Form.Item>
+                              </Col>
+                            </Row>
+                            <Row gutter={16}>
+                              <Col span={12}>
+                                <Form.Item label="止损(%)" name="stop_loss_percent">
+                                  <InputNumber min={-90} max={0} style={{ width: '100%' }} />
+                                </Form.Item>
+                              </Col>
+                              <Col span={12}>
+                                <Form.Item label="止盈(%)" name="take_profit_percent">
+                                  <InputNumber min={1} max={1000} style={{ width: '100%' }} />
+                                </Form.Item>
+                              </Col>
+                            </Row>
+                          </Form>
+                        </Card>
+                      </Col>
+                    </Row>
+                  ),
+                },
+                {
+                  key: 'risks',
+                  label: '风险阈值',
+                  children: (
+                    <Row gutter={16}>
+                      <Col span={12}>
+                        <Card title="发行方风险" size="small" type="inner">
+                          <Table
+                            dataSource={[
+                              { rule: '发行代币总数', high: `>${criteria.issuerRisk.totalTokensHigh}`, medium: `>${criteria.issuerRisk.totalTokensMedium}`, desc: '批量发币风险' },
+                              { rule: '近7天发行', high: `>${criteria.issuerRisk.recent7dHigh}`, medium: `>${criteria.issuerRisk.recent7dMedium}`, desc: '短期大量发币' },
+                              { rule: '迁移率', high: `<${(criteria.issuerRisk.migrationRateLow * 100).toFixed(0)}%`, medium: `<${(criteria.issuerRisk.migrationRateMedium * 100).toFixed(0)}%`, desc: '项目方跑路风险' },
+                            ]}
+                            rowKey="rule"
+                            size="small"
+                            pagination={false}
+                            columns={[
+                              { title: '规则', dataIndex: 'rule', key: 'rule' },
+                              { title: '高风险', dataIndex: 'high', key: 'high', render: (v: string) => <Tag color="red">{v}</Tag> },
+                              { title: '中风险', dataIndex: 'medium', key: 'medium', render: (v: string) => <Tag color="orange">{v}</Tag> },
+                              { title: '说明', dataIndex: 'desc', key: 'desc' },
+                            ]}
+                          />
+                        </Card>
+                      </Col>
+                      <Col span={12}>
+                        <Card title="地址风险" size="small" type="inner">
+                          <Table
+                            dataSource={[
+                              { rule: '前10持仓占比', high: `≥${criteria.addressRisk.top10PercentHigh}%`, medium: `≥${criteria.addressRisk.top10PercentMedium}%`, desc: '持仓集中度' },
+                              { rule: '批量地址占比', high: `≥${criteria.addressRisk.bundlesHigh}%`, medium: `≥${criteria.addressRisk.bundlesMedium}%`, desc: '刷量嫌疑' },
+                              { rule: '开发者持仓', high: `≥${criteria.addressRisk.devHoldingHigh}%`, medium: '-', desc: '跑路风险' },
+                              { rule: '持有人数量', high: `<${criteria.addressRisk.holdersLow}`, medium: '-', desc: '活跃度过低' },
+                            ]}
+                            rowKey="rule"
+                            size="small"
+                            pagination={false}
+                            columns={[
+                              { title: '规则', dataIndex: 'rule', key: 'rule' },
+                              { title: '高风险', dataIndex: 'high', key: 'high', render: (v: string) => <Tag color="red">{v}</Tag> },
+                              { title: '中风险', dataIndex: 'medium', key: 'medium', render: (v: string) => v !== '-' ? <Tag color="orange">{v}</Tag> : '-' },
+                              { title: '说明', dataIndex: 'desc', key: 'desc' },
+                            ]}
+                          />
+                        </Card>
+                      </Col>
+                    </Row>
+                  ),
+                },
+              ]} />
+            </Form>
+          </Card>
+        )}
       </div>
     </Spin>
   );

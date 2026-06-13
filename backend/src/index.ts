@@ -5,6 +5,7 @@ import { initDatabase } from './db/database';
 import { initKnownTokensCache } from './services/tokenService';
 import { startPolling } from './services/pollingService';
 import { reconcileBudget } from './services/simTradeService';
+import { loadThresholdsFromDB } from './config/thresholds';
 import routes from './api/routes';
 
 const PORT = parseInt(process.env.PORT || '3500', 10);
@@ -18,6 +19,9 @@ async function main(): Promise<void> {
   // 1. 初始化数据库
   console.log('\n[1/4] 初始化数据库...');
   initDatabase();
+
+  // 1.5 加载 AI 阈值配置
+  loadThresholdsFromDB();
 
   // 2. 加载已知代币缓存
   console.log('[2/4] 加载已知代币缓存...');

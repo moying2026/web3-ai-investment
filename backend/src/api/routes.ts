@@ -172,6 +172,112 @@ router.get('/issuers/:address', (req: Request, res: Response) => {
   }
 });
 
+// ============ 发行方黑名单 API（必须在 /issuer/:address 之前） ============
+
+// GET /api/issuer/blacklist — 获取黑名单列表
+router.get('/issuer/blacklist', (req: Request, res: Response) => {
+  try {
+    const page = parseInt(qs(req.query.page) || '1') || 1;
+    const pageSize = parseInt(qs(req.query.pageSize) || '20') || 20;
+    const status = qs(req.query.status);
+    const riskLevel = parseInt(qs(req.query.riskLevel) || '0') || undefined;
+    
+    const { getBlacklist } = require('../services/issuerProfiler');
+    const result = getBlacklist({ page, pageSize, status, riskLevel });
+    
+    logInfo('API', `查询黑名单: ${result.total}条`);
+    res.json({
+      code: 0,
+      data: result.list,
+      total: result.total,
+      page,
+      pageSize
+    });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/issuer/blacklist/check/:address — 检查是否在黑名单
+router.get('/issuer/blacklist/check/:address', (req: Request, res: Response) => {
+  try {
+    const address = String(req.params.address);
+    const { isBlacklisted } = require('../services/issuerProfiler');
+    const blacklisted = isBlacklisted(address);
+    
+    res.json({
+      code: 0,
+      data: { address, blacklisted }
+    });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// POST /api/issuer/blacklist — 添加黑名单
+router.post('/issuer/blacklist', (req: Request, res: Response) => {
+  try {
+    const { issuer_address, reason, risk_level, evidence, source } = req.body;
+    
+    if (!issuer_address || !reason || !risk_level) {
+      res.status(400).json({ code: -1, message: '缺少必要参数' });
+      return;
+    }
+    
+    const { addToBlacklist } = require('../services/issuerProfiler');
+    const result = addToBlacklist(issuer_address, reason, risk_level, evidence || {}, source || 'manual');
+    
+    logInfo('API', `添加黑名单: ${issuer_address.slice(0, 10)}...`);
+    res.json({
+      code: result.success ? 0 : -1,
+      message: result.message
+    });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// DELETE /api/issuer/blacklist/:address — 移除黑名单
+router.delete('/issuer/blacklist/:address', (req: Request, res: Response) => {
+  try {
+    const address = String(req.params.address);
+    const { reason } = req.body || {};
+    
+    const { removeFromBlacklist } = require('../services/issuerProfiler');
+    const result = removeFromBlacklist(address, reason || '手动移除');
+    
+    logInfo('API', `移除黑名单: ${address.slice(0, 10)}...`);
+    res.json({
+      code: result.success ? 0 : -1,
+      message: result.message
+    });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// POST /api/issuer/:address/analyze — 分析发行方风险
+router.post('/issuer/:address/analyze', (req: Request, res: Response) => {
+  try {
+    const address = String(req.params.address);
+    const { updateIssuerStats, calculateIssuerRisk } = require('../services/issuerProfiler');
+    
+    // 更新统计数据
+    updateIssuerStats(address);
+    
+    // 计算风险评分
+    const risk = calculateIssuerRisk(address);
+    
+    logInfo('API', `发行方风险分析: ${address.slice(0, 10)}... 评分: ${risk.score}`);
+    res.json({
+      code: 0,
+      data: risk
+    });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
 // GET /api/issuer/:address — 发行方画像详情（含风险评估）
 router.get('/issuer/:address', (req: Request, res: Response) => {
   try {
@@ -461,6 +567,614 @@ router.post('/token-icon/upload', (req: Request, res: Response) => {
 
     fs.writeFileSync(cacheFilePath, buf);
     res.json({ code: 0, message: '图标上传成功', data: { path: `/api/token-icon/${chain}/${address}` } });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// ============ 发行方画像 API（Phase 1） ============
+
+// POST /api/issuer/:address/analyze — 分析发行方风险
+router.post('/issuer/:address/analyze', (req: Request, res: Response) => {
+  try {
+    const address = String(req.params.address);
+    const { updateIssuerStats, calculateIssuerRisk } = require('../services/issuerProfiler');
+    
+    // 更新统计数据
+    updateIssuerStats(address);
+    
+    // 计算风险评分
+    const risk = calculateIssuerRisk(address);
+    
+    logInfo('API', `发行方风险分析: ${address.slice(0, 10)}... 评分: ${risk.score}`);
+    res.json({
+      code: 0,
+      data: risk
+    });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/issuer/:address/profile — 获取发行方详情（新版本）
+router.get('/issuer/:address/profile', (req: Request, res: Response) => {
+  try {
+    const address = String(req.params.address);
+    const { getIssuerDetail, updateIssuerStats, calculateIssuerRisk } = require('../services/issuerProfiler');
+    
+    // 更新统计数据
+    updateIssuerStats(address);
+    
+    // 获取详情
+    const detail = getIssuerDetail(address);
+    
+    // 计算风险评分
+    const risk = calculateIssuerRisk(address);
+    
+    logInfo('API', `发行方详情: ${address.slice(0, 10)}...`);
+    res.json({
+      code: 0,
+      data: {
+        ...detail,
+        risk_score: risk
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// ============ 代币分级 API（Phase 2） ============
+
+// GET /api/token/rating/:chain/:address — 获取代币分级
+router.get('/token/rating/:chain/:address', (req: Request, res: Response) => {
+  try {
+    const chain = String(req.params.chain);
+    const address = String(req.params.address);
+    const { getTokenRating } = require('../services/tokenRater');
+    
+    const rating = getTokenRating(chain, address);
+    
+    if (!rating) {
+      res.status(404).json({ code: -1, message: '代币未分级' });
+      return;
+    }
+    
+    res.json({
+      code: 0,
+      data: rating
+    });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// POST /api/token/rating/:chain/:address — 分析并分级代币
+router.post('/token/rating/:chain/:address', (req: Request, res: Response) => {
+  try {
+    const chain = String(req.params.chain);
+    const address = String(req.params.address);
+    const { calculateTokenRating, saveTokenRating } = require('../services/tokenRater');
+    
+    // 获取代币数据
+    const token = (db.prepare(
+      'SELECT * FROM tokens WHERE chain_id = ? AND contract_address = ?'
+    ) as any).get(chain, address);
+    
+    if (!token) {
+      res.status(404).json({ code: -1, message: '代币不存在' });
+      return;
+    }
+    
+    // 计算分级
+    const rating = calculateTokenRating(chain, address, token);
+    
+    // 保存分级
+    saveTokenRating(chain, address, rating, token);
+    
+    logInfo('API', `代币分级: ${token.symbol} → ${rating.level} (${rating.score}分)`);
+    res.json({
+      code: 0,
+      data: rating
+    });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/token/rating/stats — 获取分级统计
+router.get('/token/rating/stats', (_req: Request, res: Response) => {
+  try {
+    const { getRatingStats } = require('../services/tokenRater');
+    const stats = getRatingStats();
+    
+    res.json({
+      code: 0,
+      data: stats
+    });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/token/rating/level/:level — 获取指定等级的代币列表
+router.get('/token/rating/level/:level', (req: Request, res: Response) => {
+  try {
+    const level = String(req.params.level).toUpperCase();
+    const page = parseInt(qs(req.query.page) || '1') || 1;
+    const pageSize = parseInt(qs(req.query.pageSize) || '20') || 20;
+    
+    const { getTokensByLevel, LEVEL_STRATEGIES } = require('../services/tokenRater');
+    const result = getTokensByLevel(level, { page, pageSize });
+    const strategy = LEVEL_STRATEGIES[level];
+    
+    res.json({
+      code: 0,
+      data: {
+        ...result,
+        strategy
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// POST /api/token/rating/batch — 批量分级
+router.post('/token/rating/batch', (req: Request, res: Response) => {
+  try {
+    const limit = parseInt(qs(req.query.limit) || '100') || 100;
+    const { batchRateTokens } = require('../services/tokenRater');
+    
+    const result = batchRateTokens(limit);
+    
+    logInfo('API', `批量分级: ${result.rated}个成功, ${result.skipped}个跳过`);
+    res.json({
+      code: 0,
+      data: result
+    });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/token/rating/strategies — 获取所有分级策略
+router.get('/token/rating/strategies', (_req: Request, res: Response) => {
+  try {
+    const { LEVEL_STRATEGIES } = require('../services/tokenRater');
+    
+    res.json({
+      code: 0,
+      data: LEVEL_STRATEGIES
+    });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// ============ 交易真实性分析 API（Phase 3） ============
+
+// GET /api/token/trade-analysis/:chain/:address — 获取交易分析结果
+router.get('/token/trade-analysis/:chain/:address', (req: Request, res: Response) => {
+  try {
+    const chain = String(req.params.chain);
+    const address = String(req.params.address);
+    const { getTradeAnalysis } = require('../services/tradeAnalyzer');
+    
+    const analysis = getTradeAnalysis(chain, address);
+    
+    if (!analysis) {
+      res.status(404).json({ code: -1, message: '未找到交易分析数据' });
+      return;
+    }
+    
+    res.json({
+      code: 0,
+      data: analysis
+    });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// POST /api/token/trade-analysis/:chain/:address — 分析交易真实性
+router.post('/token/trade-analysis/:chain/:address', (req: Request, res: Response) => {
+  try {
+    const chain = String(req.params.chain);
+    const address = String(req.params.address);
+    const { calculateWashTradingScore, classifyParticipants, saveTradeAnalysis } = require('../services/tradeAnalyzer');
+    
+    // 获取代币数据
+    const token = (db.prepare(
+      'SELECT * FROM tokens WHERE chain_id = ? AND contract_address = ?'
+    ) as any).get(chain, address);
+    
+    if (!token) {
+      res.status(404).json({ code: -1, message: '代币不存在' });
+      return;
+    }
+    
+    // 模拟交易数据（实际应该从链上获取）
+    const mockTrades = Array.from({ length: 20 }, (_, i) => ({
+      from_address: `0x${Math.random().toString(16).slice(2, 42)}`,
+      to_address: `0x${Math.random().toString(16).slice(2, 42)}`,
+      amount: Math.random() * 1000,
+      price: Math.random() * 0.01,
+      timestamp: Date.now() - Math.random() * 3600000,
+      block_number: 1000000 + i
+    }));
+    
+    // 分析刷单风险
+    const washTrading = calculateWashTradingScore(mockTrades);
+    
+    // 分类参与者
+    const participants = classifyParticipants(mockTrades);
+    
+    const result = {
+      wash_trading: washTrading,
+      participants: {
+        project: participants.project_wallets.size,
+        bot: participants.bot_wallets.size,
+        kol: participants.kol_wallets.size,
+        smart_money: participants.smart_money_wallets.size,
+        retail: participants.retail_wallets.size
+      },
+      suspicious_patterns: [],
+      recommendation: washTrading.level === 'high' ? '避免' : 
+                     washTrading.level === 'moderate' ? '谨慎' : '正常'
+    };
+    
+    // 保存分析结果
+    saveTradeAnalysis(chain, address, result, mockTrades.length);
+    
+    logInfo('API', `交易分析: ${token.symbol} 刷单风险: ${(washTrading.score * 100).toFixed(0)}%`);
+    res.json({
+      code: 0,
+      data: result
+    });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// POST /api/token/trade-analysis/batch — 批量分析
+router.post('/token/trade-analysis/batch', (req: Request, res: Response) => {
+  try {
+    const limit = parseInt(qs(req.query.limit) || '100') || 100;
+    const { batchAnalyze } = require('../services/tradeAnalyzer');
+    
+    const result = batchAnalyze(limit);
+    
+    logInfo('API', `批量交易分析: ${result.analyzed}个成功, ${result.skipped}个跳过`);
+    res.json({
+      code: 0,
+      data: result
+    });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/token/trade-analysis/stats — 获取交易分析统计
+router.get('/token/trade-analysis/stats', (_req: Request, res: Response) => {
+  try {
+    const stats = (db.prepare(`
+      SELECT 
+        wash_trading_level,
+        COUNT(*) as count
+      FROM token_trade_analysis
+      GROUP BY wash_trading_level
+    `) as any).all();
+    
+    const result: Record<string, number> = {
+      clean: 0,
+      suspicious: 0,
+      moderate: 0,
+      high: 0
+    };
+    
+    for (const stat of stats) {
+      result[stat.wash_trading_level] = stat.count;
+    }
+    
+    res.json({
+      code: 0,
+      data: result
+    });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// ============ 相关面分析 API（Phase 4） ============
+
+// GET /api/token/context/:chain/:address — 获取相关面分析结果
+router.get('/token/context/:chain/:address', (req: Request, res: Response) => {
+  try {
+    const chain = String(req.params.chain);
+    const address = String(req.params.address);
+    const { getContextAnalysis } = require('../services/contextAnalyzer');
+    
+    const analysis = getContextAnalysis(chain, address);
+    
+    if (!analysis) {
+      res.status(404).json({ code: -1, message: '未找到相关面分析数据' });
+      return;
+    }
+    
+    res.json({
+      code: 0,
+      data: analysis
+    });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// POST /api/token/context/:chain/:address — 分析相关面风险
+router.post('/token/context/:chain/:address', (req: Request, res: Response) => {
+  try {
+    const chain = String(req.params.chain);
+    const address = String(req.params.address);
+    const { calculateContextRisk, saveContextAnalysis } = require('../services/contextAnalyzer');
+    
+    // 获取代币数据
+    const token = (db.prepare(
+      'SELECT * FROM tokens WHERE chain_id = ? AND contract_address = ?'
+    ) as any).get(chain, address);
+    
+    if (!token) {
+      res.status(404).json({ code: -1, message: '代币不存在' });
+      return;
+    }
+    
+    // 分析相关面风险
+    const result = calculateContextRisk(token.symbol, token.name);
+    
+    // 保存分析结果
+    saveContextAnalysis(chain, address, result);
+    
+    logInfo('API', `相关面分析: ${token.symbol} 风险: ${result.context_risk_level}`);
+    res.json({
+      code: 0,
+      data: result
+    });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// POST /api/token/context/batch — 批量分析
+router.post('/token/context/batch', (req: Request, res: Response) => {
+  try {
+    const limit = parseInt(qs(req.query.limit) || '100') || 100;
+    const { batchAnalyze } = require('../services/contextAnalyzer');
+    
+    const result = batchAnalyze(limit);
+    
+    logInfo('API', `批量相关面分析: ${result.analyzed}个成功, ${result.skipped}个跳过`);
+    res.json({
+      code: 0,
+      data: result
+    });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/token/context/stats — 获取相关面分析统计
+router.get('/token/context/stats', (_req: Request, res: Response) => {
+  try {
+    const stats = (db.prepare(`
+      SELECT 
+        context_risk_level,
+        COUNT(*) as count
+      FROM token_context_analysis
+      GROUP BY context_risk_level
+    `) as any).all();
+    
+    const result: Record<string, number> = {
+      low: 0,
+      medium: 0,
+      high: 0
+    };
+    
+    for (const stat of stats) {
+      result[stat.context_risk_level] = stat.count;
+    }
+    
+    res.json({
+      code: 0,
+      data: result
+    });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// POST /api/token/context/hot-tokens — 添加热门代币
+router.post('/token/context/hot-tokens', (req: Request, res: Response) => {
+  try {
+    const { symbol, chain_id, contract_address, heat_score } = req.body;
+    
+    if (!symbol || !chain_id || !contract_address) {
+      res.status(400).json({ code: -1, message: '缺少必要参数' });
+      return;
+    }
+    
+    const { addHotToken } = require('../services/contextAnalyzer');
+    addHotToken(symbol, chain_id, contract_address, heat_score || 50);
+    
+    logInfo('API', `添加热门代币: ${symbol}`);
+    res.json({
+      code: 0,
+      message: '成功添加热门代币'
+    });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/token/context/hot-tokens — 获取热门代币列表
+router.get('/token/context/hot-tokens', (_req: Request, res: Response) => {
+  try {
+    const { getHotTokens } = require('../services/contextAnalyzer');
+    const hotTokens = getHotTokens();
+    
+    res.json({
+      code: 0,
+      data: hotTokens
+    });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// ============ 钱包智能 API（Phase 5） ============
+
+// GET /api/wallet/:chain/:address — 获取钱包详情
+router.get('/wallet/:chain/:address', (req: Request, res: Response) => {
+  try {
+    const chain = String(req.params.chain);
+    const address = String(req.params.address);
+    const { getWalletDetail, updateWalletStats } = require('../services/walletIntelligence');
+    
+    // 更新统计数据
+    updateWalletStats(chain, address);
+    
+    // 获取详情
+    const detail = getWalletDetail(chain, address);
+    
+    res.json({
+      code: 0,
+      data: detail
+    });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// POST /api/wallet/:chain/:address/analyze — 分析钱包（Smart Money识别）
+router.post('/wallet/:chain/:address/analyze', (req: Request, res: Response) => {
+  try {
+    const chain = String(req.params.chain);
+    const address = String(req.params.address);
+    const { identifySmartMoney, updateWalletStats, getOrCreateWalletProfile } = require('../services/walletIntelligence');
+    
+    // 获取或创建钱包画像
+    const profile = getOrCreateWalletProfile(chain, address);
+    
+    // 分析Smart Money
+    const smartMoneyScore = identifySmartMoney(address, chain);
+    
+    // 更新统计数据
+    updateWalletStats(chain, address);
+    
+    // 确定钱包类型
+    let walletType = 'unknown';
+    if (smartMoneyScore.score >= 60) walletType = 'smart_money';
+    else if (smartMoneyScore.trade_count > 100) walletType = 'whale';
+    
+    // 更新钱包类型
+    (db.prepare(`
+      UPDATE wallet_profiles SET wallet_type = ? WHERE chain_id = ? AND address = ?
+    `) as any).run(walletType, chain, address);
+    
+    logInfo('API', `钱包分析: ${address.slice(0, 10)}... 类型: ${walletType} 评分: ${smartMoneyScore.score}`);
+    res.json({
+      code: 0,
+      data: {
+        wallet_type: walletType,
+        smart_money_score: smartMoneyScore
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// POST /api/wallet/watchlist — 添加监控
+router.post('/wallet/watchlist', (req: Request, res: Response) => {
+  try {
+    const { wallet_address, chain_id, priority, alert_on_buy, alert_on_sell, alert_threshold_usd } = req.body;
+    
+    if (!wallet_address || !chain_id) {
+      res.status(400).json({ code: -1, message: '缺少必要参数' });
+      return;
+    }
+    
+    const { addToWatchlist } = require('../services/walletIntelligence');
+    const result = addToWatchlist({
+      wallet_address,
+      chain_id,
+      priority: priority || 'normal',
+      alert_on_buy: alert_on_buy !== false,
+      alert_on_sell: alert_on_sell !== false,
+      alert_threshold_usd: alert_threshold_usd || 1000
+    });
+    
+    res.json({
+      code: result.success ? 0 : -1,
+      message: result.message
+    });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// DELETE /api/wallet/watchlist/:chain/:address — 移除监控
+router.delete('/wallet/watchlist/:chain/:address', (req: Request, res: Response) => {
+  try {
+    const chain = String(req.params.chain);
+    const address = String(req.params.address);
+    const { removeFromWatchlist } = require('../services/walletIntelligence');
+    
+    const result = removeFromWatchlist(chain, address);
+    
+    res.json({
+      code: result.success ? 0 : -1,
+      message: result.message
+    });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/wallet/watchlist — 获取监控列表
+router.get('/wallet/watchlist', (req: Request, res: Response) => {
+  try {
+    const page = parseInt(qs(req.query.page) || '1') || 1;
+    const pageSize = parseInt(qs(req.query.pageSize) || '20') || 20;
+    const status = qs(req.query.status);
+    const priority = qs(req.query.priority);
+    
+    const { getWatchlist } = require('../services/walletIntelligence');
+    const result = getWatchlist({ page, pageSize, status, priority });
+    
+    res.json({
+      code: 0,
+      data: result.list,
+      total: result.total,
+      page,
+      pageSize
+    });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/wallet/watchlist/stats — 获取监控统计
+router.get('/wallet/watchlist/stats', (_req: Request, res: Response) => {
+  try {
+    const { getWatchlistStats, getWalletTypeStats } = require('../services/walletIntelligence');
+    
+    res.json({
+      code: 0,
+      data: {
+        watchlist: getWatchlistStats(),
+        wallet_types: getWalletTypeStats()
+      }
+    });
   } catch (err: any) {
     res.status(500).json({ code: -1, message: err.message });
   }
@@ -864,6 +1578,127 @@ router.get('/sim/accuracy', (_req: Request, res: Response) => {
   }
 });
 
+// GET /api/ai/decision-criteria — AI 决策标准与阈值
+router.get('/ai/decision-criteria', (_req: Request, res: Response) => {
+  try {
+    const { THRESHOLDS } = require('../config/thresholds');
+    
+    // 评分维度说明
+    const dimensions = [
+      {
+        key: 'security',
+        name: '合约安全',
+        maxScore: 20,
+        weight: THRESHOLDS.decision.weights.risk,
+        criteria: [
+          { condition: '审计风险低 (risk_level=1)', score: 18, description: '合约通过安全审计' },
+          { condition: '审计风险中等 (risk_level=2)', score: 10, description: '合约审计有部分风险' },
+          { condition: '审计风险高 (risk_level≥3)', score: 3, description: '合约存在高风险' },
+          { condition: '异常税率', score: -5, description: '买入/卖出税率异常' },
+          { condition: '买入税率>5%', score: -3, description: '买入成本过高' },
+        ],
+      },
+      {
+        key: 'smartMoney',
+        name: '聪明钱信号',
+        maxScore: 25,
+        weight: THRESHOLDS.decision.weights.onchain,
+        criteria: [
+          { condition: 'SM持有者≥10', score: 22, description: '大量聪明钱关注' },
+          { condition: 'SM持有者≥5', score: 18, description: '聪明钱关注度较高' },
+          { condition: 'SM持有者≥2', score: 14, description: '少量聪明钱关注' },
+          { condition: 'SM持有者<2', score: 6, description: '聪明钱关注度低' },
+          { condition: 'SM占比>5%', score: 3, description: '聪明钱重仓' },
+          { condition: 'SM买入信号', score: 5, description: '聪明钱正在买入' },
+        ],
+      },
+      {
+        key: 'social',
+        name: '社交热度',
+        maxScore: 15,
+        weight: THRESHOLDS.decision.weights.market,
+        criteria: [
+          { condition: '搜索量≥100/24h', score: 13, description: '搜索热度高' },
+          { condition: '搜索量≥30/24h', score: 10, description: '搜索热度中等' },
+          { condition: '搜索量<30/24h', score: 5, description: '搜索热度低' },
+          { condition: '有社交话题关联', score: 2, description: '社交媒体讨论' },
+        ],
+      },
+      {
+        key: 'issuer',
+        name: '发行方信誉',
+        maxScore: 15,
+        weight: THRESHOLDS.decision.weights.issuer,
+        criteria: [
+          { condition: '迁移率>50%', score: 13, description: '项目方有成功迁移历史' },
+          { condition: '迁移率>20%', score: 10, description: '项目方迁移记录一般' },
+          { condition: '迁移率<20%', score: 4, description: '项目方迁移记录差' },
+          { condition: '发行代币>100个', score: -2, description: '⚠️ 批量发币风险' },
+        ],
+      },
+      {
+        key: 'liquidity',
+        name: '流动性/持有人',
+        maxScore: 25,
+        weight: THRESHOLDS.decision.weights.liquidity,
+        criteria: [
+          { condition: '持有人≥500', score: 4, description: '持有人数量健康' },
+          { condition: '持有人≥100', score: 2, description: '持有人数量中等' },
+          { condition: '持有人<100', score: -2, description: '持有人过少' },
+          { condition: '流动性≥$100K', score: 4, description: '流动性充足' },
+          { condition: '流动性≥$20K', score: 2, description: '流动性中等' },
+          { condition: '流动性<$20K', score: -3, description: '⚠️ 流动性差' },
+          { condition: '24H交易量≥$50K', score: 3, description: '交易活跃' },
+          { condition: '市值<$50K', score: 2, description: '低市值上涨空间大' },
+        ],
+      },
+    ];
+
+    // 决策阈值
+    const decisionRules = {
+      buyThreshold: THRESHOLDS.decision.buyThreshold,
+      holdThreshold: THRESHOLDS.decision.holdThreshold,
+      watchThreshold: THRESHOLDS.decision.watchThreshold,
+      riskDowngradeRule: '高风险标记≥3个时，BUY降级为HOLD，HOLD降级为WATCH',
+    };
+
+    // 交易金额配置
+    const tradingRules = {
+      buyAmountMap: {
+        BUY: { amount: 100, description: 'AI建议买入时投入$100' },
+        HOLD: { amount: 50, description: 'AI建议持有时投入$50' },
+        AVOID: { amount: 10, description: 'AI建议回避时投入$10' },
+      },
+      budget: {
+        totalBudget: 10000,
+        maxPerTrade: 100,
+        maxPositions: 1000,
+        maxChainPercent: 40,
+      },
+      stopLoss: THRESHOLDS.simulation.stopLossPercent,
+      takeProfit: THRESHOLDS.simulation.takeProfitPercent,
+    };
+
+    // 发行方风险阈值
+    const issuerRisk = THRESHOLDS.issuer;
+    const addressRisk = THRESHOLDS.address;
+
+    logInfo('API', 'AI决策标准查询');
+    res.json({
+      code: 0,
+      data: {
+        dimensions,
+        decisionRules,
+        tradingRules,
+        issuerRisk,
+        addressRisk,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
 // GET /api/analysis — AI 分析结果列表
 router.get('/analysis', (req: Request, res: Response) => {
   try {
@@ -924,6 +1759,86 @@ router.get('/analysis', (req: Request, res: Response) => {
     });
 
     res.json({ code: 0, data: { data: parsed, total: total, page, pageSize } });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// ============ AI 阈值管理 API ============
+
+// GET /api/ai/thresholds — 获取所有阈值配置
+router.get('/ai/thresholds', (_req: Request, res: Response) => {
+  try {
+    const rows = db.prepare('SELECT key, value FROM ai_thresholds').all() as any[];
+    const thresholds: Record<string, string> = {};
+    for (const row of rows) {
+      thresholds[row.key] = row.value;
+    }
+    logInfo('API', '获取AI阈值配置');
+    res.json({ code: 0, data: thresholds });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// PUT /api/ai/thresholds — 更新阈值配置
+router.put('/ai/thresholds', (req: Request, res: Response) => {
+  try {
+    const updates = req.body;
+    if (!updates || typeof updates !== 'object') {
+      res.status(400).json({ code: -1, message: '请求体必须是对象' });
+      return;
+    }
+
+    const allowedKeys = new Set([
+      'dimension_weight_risk', 'dimension_weight_market', 'dimension_weight_issuer',
+      'dimension_weight_onchain', 'dimension_weight_liquidity',
+      'buy_threshold', 'hold_threshold', 'watch_threshold',
+      'buy_amount_buy', 'buy_amount_hold', 'buy_amount_avoid',
+      'total_budget', 'max_per_trade', 'max_positions', 'max_chain_pct',
+      'stop_loss_percent', 'take_profit_percent',
+    ]);
+
+    const stmt = db.prepare('INSERT INTO ai_thresholds (key, value, updated_at) VALUES (?, ?, datetime(\'now\')) ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = datetime(\'now\')');
+    
+    let updated = 0;
+    for (const [key, value] of Object.entries(updates)) {
+      if (allowedKeys.has(key)) {
+        stmt.run(key, String(value), String(value));
+        updated++;
+      }
+    }
+
+    logInfo('API', `更新AI阈值: ${updated}项`);
+    res.json({ code: 0, data: { updated }, message: `成功更新${updated}项配置` });
+  } catch (err: any) {
+    res.status(500).json({ code: -1, message: err.message });
+  }
+});
+
+// GET /api/ai/thresholds/defaults — 获取默认阈值配置
+router.get('/ai/thresholds/defaults', (_req: Request, res: Response) => {
+  try {
+    const defaults = {
+      dimension_weight_risk: 0.25,
+      dimension_weight_market: 0.15,
+      dimension_weight_issuer: 0.15,
+      dimension_weight_onchain: 0.25,
+      dimension_weight_liquidity: 0.20,
+      buy_threshold: 70,
+      hold_threshold: 50,
+      watch_threshold: 30,
+      buy_amount_buy: 100,
+      buy_amount_hold: 50,
+      buy_amount_avoid: 10,
+      total_budget: 10000,
+      max_per_trade: 100,
+      max_positions: 1000,
+      max_chain_pct: 40,
+      stop_loss_percent: -20,
+      take_profit_percent: 50,
+    };
+    res.json({ code: 0, data: defaults });
   } catch (err: any) {
     res.status(500).json({ code: -1, message: err.message });
   }
