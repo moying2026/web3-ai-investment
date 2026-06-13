@@ -60,7 +60,8 @@ const PositionMonitor: React.FC = () => {
   const loadPositions = useCallback(async () => {
     try {
       const res = await simApi.getOpenPositions();
-      const data = (res as any)?.data;
+      // 拦截器已提取 res.data.data，res 本身是 { positions, summary }
+      const data = (res as any);
       setPositions(data?.positions || []);
       setSummary(data?.summary || null);
     } catch { /* 静默 */ }

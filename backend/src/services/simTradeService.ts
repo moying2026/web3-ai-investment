@@ -327,13 +327,15 @@ export function placeOrder(params: PlaceOrderParams): any {
     // 模拟盘：本地直接生成 SUCCESS 记录
     (db.prepare(`INSERT INTO sim_trades (
       trade_id, trade_type, strategy, chain_id, dex, contract_address, symbol, side, is_simulated,
+      payment_token, payment_amount,
       from_token, from_amount, from_contract, to_token, to_amount, to_contract,
       price, price_impact, gas_fee, gas_token,
       stop_loss_price, stop_loss_percent, take_profit_price, take_profit_percent,
       trigger_reason, trigger_scores, status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SUCCESS', ?, ?)`)).run(
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SUCCESS', ?, ?)`)).run(
       tradeId, 'auto', params.strategy || null, params.chain_id, params.dex || null,
       params.contract_address, params.symbol || null, params.side,
+      params.from_token || paymentToken, fromAmount.toString(),
       params.from_token || paymentToken, fromAmount.toString(), params.from_contract || null,
       params.to_token || params.symbol || null, toAmount.toString(), params.to_contract || null,
       price.toString(), params.price_impact?.toString() || null,
@@ -355,13 +357,15 @@ export function placeOrder(params: PlaceOrderParams): any {
     // 实盘：记录为 PENDING，等待链上 txHash 回调
     (db.prepare(`INSERT INTO sim_trades (
       trade_id, trade_type, strategy, chain_id, dex, contract_address, symbol, side, is_simulated,
+      payment_token, payment_amount,
       from_token, from_amount, from_contract, to_token, to_amount, to_contract,
       price, price_impact, gas_fee, gas_token,
       stop_loss_price, stop_loss_percent, take_profit_price, take_profit_percent,
       trigger_reason, trigger_scores, status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)`)).run(
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)`)).run(
       tradeId, 'live', params.strategy || null, params.chain_id, params.dex || null,
       params.contract_address, params.symbol || null, params.side,
+      params.from_token || paymentToken, fromAmount.toString(),
       params.from_token || paymentToken, fromAmount.toString(), params.from_contract || null,
       params.to_token || params.symbol || null, toAmount.toString(), params.to_contract || null,
       price.toString(), params.price_impact?.toString() || null,
@@ -434,13 +438,14 @@ function executePendingOrder(order: any, currentPrice: number): void {
   (db.prepare(`INSERT INTO sim_trades (
     trade_id, parent_trade_id, trade_type, strategy, chain_id, dex, contract_address, symbol,
     side, is_simulated,
+    payment_token, payment_amount,
     from_token, from_amount, from_contract,
     to_token, to_amount, to_contract,
     price, price_impact, gas_fee, gas_token,
     trigger_reason,
     status, pnl, pnl_percent, holding_duration_minutes,
     created_at, updated_at, closed_at
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'SELL', 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SUCCESS', ?, ?, ?, ?, ?, ?)`)).run(
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'SELL', 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SUCCESS', ?, ?, ?, ?, ?, ?)`)).run(
     uuidv4(),
     order.parent_trade_id,
     buyTrade?.trade_type || 'triggered',
@@ -449,6 +454,8 @@ function executePendingOrder(order: any, currentPrice: number): void {
     buyTrade?.dex || null,
     order.contract_address,
     order.symbol,
+    buyTrade?.to_token || null,       // payment_token: 获得的代币
+    sellToAmount.toFixed(6),         // payment_amount: 获得的金额
     buyTrade?.to_token || null,       // from_token: 卖出的代币（BUY 时获得的）
     sellQty.toString(),              // from_amount
     buyTrade?.to_contract || null,    // from_contract
@@ -506,13 +513,14 @@ export function closePosition(trade: any, exitPrice: number, exitReason: string)
   (db.prepare(`INSERT INTO sim_trades (
     trade_id, parent_trade_id, trade_type, strategy, chain_id, dex, contract_address, symbol,
     side, is_simulated,
+    payment_token, payment_amount,
     from_token, from_amount, from_contract,
     to_token, to_amount, to_contract,
     price, price_impact, gas_fee, gas_token,
     trigger_reason,
     status, pnl, pnl_percent, holding_duration_minutes,
     created_at, updated_at, closed_at
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'SELL', 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SUCCESS', ?, ?, ?, ?, ?, ?)`)).run(
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'SELL', 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SUCCESS', ?, ?, ?, ?, ?, ?)`)).run(
     sellTradeId,
     trade.trade_id,               // parent_trade_id → 关联原 BUY
     trade.trade_type,
@@ -521,6 +529,8 @@ export function closePosition(trade: any, exitPrice: number, exitReason: string)
     trade.dex || null,
     trade.contract_address,
     trade.symbol,
+    trade.from_token || null,     // payment_token: 获得的代币（BUY 时支付的）
+    sellToAmount.toFixed(6),      // payment_amount: 获得的金额
     trade.to_token || null,       // from_token: 卖出的代币（BUY 时获得的）
     sellFromAmount.toString(),    // from_amount: 卖出数量
     trade.to_contract || null,    // from_contract
